@@ -464,7 +464,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Modern loft-style apartment for professionals",
     features: ["Open Plan", "High Ceilings", "Designer Finishes", "Co-working Space"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/modern-high-rise-apartment-jeddah-city.jpg",
   },
   {
     id: "17",
@@ -476,7 +476,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Magnificent mansion with botanical gardens",
     features: ["Botanical Gardens", "Tennis Court", "Staff Quarters", "Security Lodge"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/ultra-luxury-mansion-estate-riyadh.jpg",
   },
   {
     id: "18",
@@ -488,7 +488,7 @@ export const mockProperties: Property[] = [
     status: "reserved",
     description: "Stunning penthouse with panoramic sunset views",
     features: ["Panoramic Views", "Chef's Kitchen", "Wine Cellar", "Home Automation"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/luxury-penthouse-sea-view-jeddah.jpg",
   },
   {
     id: "19",
@@ -500,7 +500,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Eco-friendly townhouse in sustainable community",
     features: ["Solar Power", "Energy Efficient", "Green Spaces", "Bike Paths"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/modern-townhouse-garden-riyadh.jpg",
   },
   {
     id: "20",
@@ -512,7 +512,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Beachfront living with ocean breeze",
     features: ["Beach Access", "Sea Breeze", "Balcony", "Furnished Option"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/waterfront-apartment-dammam-bay-view.jpg",
   },
   {
     id: "21",
@@ -524,7 +524,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Hillside villa with mountain and sea views",
     features: ["Mountain View", "Sea View", "Infinity Pool", "Outdoor Lounge"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/luxury-modern-villa-with-pool-riyadh.jpg",
   },
   {
     id: "22",
@@ -536,7 +536,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Urban living in the business district",
     features: ["Business District", "Metro Access", "Retail Below", "Valet Parking"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/affordable-modern-apartment-riyadh.jpg",
   },
   {
     id: "23",
@@ -548,7 +548,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Restored heritage palace with modern amenities",
     features: ["Heritage Architecture", "Courtyard", "Modern Interior", "Art Gallery"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/arabian-traditional-villa-riyadh.jpg",
   },
   {
     id: "24",
@@ -560,7 +560,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Waterfront villa with private beach access",
     features: ["Private Beach", "Boat Dock", "Beach House", "Outdoor Shower"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/waterfront-apartment-dammam-bay-view.jpg",
   },
   {
     id: "25",
@@ -572,7 +572,7 @@ export const mockProperties: Property[] = [
     status: "available",
     description: "Ultra-modern penthouse at the top of iconic tower",
     features: ["360 Views", "Sky Lounge", "Private Pool", "Helipad Access"],
-    imageUrl: "/placeholder.svg?height=400&width=600",
+    imageUrl: "/marina-penthouse-arabian-gulf-view.jpg",
   },
 ]
 

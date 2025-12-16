@@ -12,6 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Users,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +27,8 @@ export function AppointmentsContent() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [selectedUserId, setSelectedUserId] = useState<string>("all")
   const [viewMonth, setViewMonth] = useState(new Date())
+  const [creatingHandoff, setCreatingHandoff] = useState<string | null>(null)
+  const [createdHandoffs, setCreatedHandoffs] = useState<Set<string>>(new Set())
 
   const currentRole = typeof window !== "undefined" ? localStorage.getItem("fph-current-role") : "sales_rep"
   const canViewTeamAgenda = currentRole === "admin" || currentRole === "sales_manager"
@@ -89,6 +93,35 @@ export function AppointmentsContent() {
 
   const nextMonth = () => {
     setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1))
+  }
+
+  const handleCreateHandoff = async (appointmentId: string) => {
+    setCreatingHandoff(appointmentId)
+    try {
+      const response = await fetch("/api/handoffs/from-appointment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ appointmentId }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to create handoff package")
+      }
+
+      const handoff = await response.json()
+      setCreatedHandoffs((prev) => new Set([...prev, appointmentId]))
+      
+      // Show success message
+      alert(`Handoff package created successfully! ID: ${handoff.id}`)
+    } catch (error: any) {
+      console.error("Error creating handoff package:", error)
+      alert(`Error: ${error.message}`)
+    } finally {
+      setCreatingHandoff(null)
+    }
   }
 
   return (
@@ -292,9 +325,29 @@ export function AppointmentsContent() {
                   </div>
 
                   <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                    <Button variant="outline" size="sm" className="gap-2 bg-transparent flex-1">
-                      <FileText className="h-3.5 w-3.5" />
-                      Handoff Package
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="gap-2 bg-transparent flex-1"
+                      onClick={() => handleCreateHandoff(appointment.id)}
+                      disabled={creatingHandoff === appointment.id || createdHandoffs.has(appointment.id)}
+                    >
+                      {creatingHandoff === appointment.id ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Creating...
+                        </>
+                      ) : createdHandoffs.has(appointment.id) ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                          Created
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-3.5 w-3.5" />
+                          Create Handoff
+                        </>
+                      )}
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

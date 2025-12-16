@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
+import Image from "next/image"
 import { Building2, MapPin, BedDouble, Home, Search, Filter, X } from "lucide-react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +16,10 @@ import { mockProperties } from "@/lib/mock-data"
 export function PropertiesContent() {
   const [selectedProperty, setSelectedProperty] = useState<string | null>(null)
 
-  const property = mockProperties.find((p) => p.id === selectedProperty)
+  const property = useMemo(
+    () => mockProperties.find((p) => p.id === selectedProperty),
+    [selectedProperty]
+  )
 
   return (
     <div className="p-6 space-y-6">
@@ -70,8 +74,22 @@ export function PropertiesContent() {
             onClick={() => setSelectedProperty(prop.id)}
           >
             <CardHeader className="p-0">
-              <div className="h-48 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-t-xl flex items-center justify-center">
-                <Building2 className="h-16 w-16 text-primary/40" />
+              <div className="relative h-48 w-full bg-gradient-to-br from-primary/20 to-secondary/20 rounded-t-xl overflow-hidden">
+                {prop.imageUrl ? (
+                  <Image
+                    src={prop.imageUrl}
+                    alt={prop.name}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    loading="lazy"
+                    quality={85}
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <Building2 className="h-16 w-16 text-primary/40" />
+                  </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
@@ -131,9 +149,23 @@ export function PropertiesContent() {
                 </div>
               </SheetHeader>
               <div className="mt-6 space-y-6">
-                {/* Image Placeholder */}
-                <div className="h-64 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-xl flex items-center justify-center">
-                  <Building2 className="h-24 w-24 text-primary/40" />
+                {/* Property Image */}
+                <div className="relative h-80 w-full bg-gradient-to-br from-primary/20 to-secondary/20 rounded-xl overflow-hidden">
+                  {property.imageUrl ? (
+                    <Image
+                      src={property.imageUrl}
+                      alt={property.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 100vw, 768px"
+                      priority
+                      quality={90}
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center">
+                      <Building2 className="h-24 w-24 text-primary/40" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Price & Status */}

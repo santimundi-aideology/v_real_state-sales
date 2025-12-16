@@ -28,3 +28,40 @@ Continue building your app on:
 2. Deploy your chats from the v0 interface
 3. Changes are automatically pushed to this repository
 4. Vercel deploys the latest version from this repository
+
+## Database Setup
+
+This project uses Supabase as the backend database. To set up the database:
+
+1. **Create a Supabase project** at [https://supabase.com](https://supabase.com)
+
+2. **Configure environment variables**:
+   - Copy `.env.example` to `.env.local`
+   - Add your Supabase project URL and anon key
+
+3. **Run the database migration**:
+   - Go to your Supabase project dashboard
+   - Navigate to **SQL Editor**
+   - Open `supabase/migrations/001_initial_schema.sql`
+   - Copy and paste the contents into the SQL Editor and run it
+
+4. **Optional: Seed sample data**:
+   - Run `supabase/seed.sql` in the SQL Editor to populate sample properties and integrations
+
+For detailed setup instructions, see [supabase/README.md](./supabase/README.md)
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run development server
+pnpm dev
+
+# Build for production
+pnpm build
+
+# Start production server
+pnpm start
+```

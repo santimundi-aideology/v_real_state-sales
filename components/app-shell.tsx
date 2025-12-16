@@ -40,6 +40,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import type { UserRole } from "@/lib/types"
 import { getNavigationForRole, getRoleLabel } from "@/lib/role-permissions"
 import { cn } from "@/lib/utils"
+import { useUser } from "@/lib/hooks/use-user"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase/client"
 
 const iconMap = {
   LayoutDashboard,
@@ -65,15 +68,36 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, defaultRole = "sales_manager" }: AppShellProps) {
-  const [currentRole, setCurrentRole] = React.useState<UserRole>(() => {
+  const { user, loading: userLoading } = useUser()
+  const router = useRouter()
+  const [currentRole, setCurrentRole] = React.useState<UserRole>(defaultRole)
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
+  const pathname = usePathname()
+
+  React.useEffect(() => {
+    setMounted(true)
+    // Load role from localStorage after mount to avoid hydration mismatch
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("fph-current-role")
-      return (stored as UserRole) || defaultRole
+      if (stored) {
+        setCurrentRole(stored as UserRole)
+      }
+      
+      // Suppress ElevenLabs widget console errors (non-critical)
+      const originalError = console.error
+      console.error = function(...args: any[]) {
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('ConversationalAI')) {
+          return // Suppress widget errors
+        }
+        originalError.apply(console, args)
+      }
+      
+      return () => {
+        console.error = originalError
+      }
     }
-    return defaultRole
-  })
-  const [sidebarOpen, setSidebarOpen] = React.useState(false)
-  const pathname = usePathname()
+  }, [])
 
   const handleRoleChange = (role: UserRole) => {
     setCurrentRole(role)
@@ -82,7 +106,37 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
     }
   }
 
-  const navigation = getNavigationForRole(currentRole)
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth/signin')
+    router.refresh()
+  }
+
+  // Get user initials for avatar - memoized
+  const userInitials = React.useMemo(() => {
+    if (!user) return "U"
+    const name = user.user_metadata?.name || user.email || "U"
+    const parts = name.split(" ")
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase()
+    }
+    return name.substring(0, 2).toUpperCase()
+  }, [user])
+
+  const userName = React.useMemo(() => {
+    if (!user) return "Guest"
+    return user.user_metadata?.name || user.email?.split("@")[0] || "User"
+  }, [user])
+
+  const userEmail = React.useMemo(() => {
+    if (!user) return ""
+    return user.email || ""
+  }, [user])
+
+  const navigation = React.useMemo(
+    () => getNavigationForRole(currentRole),
+    [currentRole]
+  )
 
   return (
     <div className="relative min-h-screen">
@@ -146,28 +200,38 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
             </DropdownMenu>
 
             {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-primary text-primary-foreground text-xs">AA</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col gap-1">
-                    <div className="text-sm font-medium">Ahmed Al-Mansour</div>
-                    <div className="text-xs text-muted-foreground">ahmed@fph.sa</div>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>Profile</DropdownMenuItem>
-                <DropdownMenuItem>Preferences</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>Logout</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {!userLoading && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="rounded-full">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                        {userInitials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col gap-1">
+                      <div className="text-sm font-medium">{userName}</div>
+                      <div className="text-xs text-muted-foreground">{userEmail}</div>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => router.push('/settings')}>
+                    Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/settings')}>
+                    Preferences
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </header>
@@ -189,6 +253,7 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
@@ -219,7 +284,13 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
         />
       )}
 
-      <elevenlabs-convai agent-id="agent_5801kc9fq5m8fz2v8w5xvtq1ad9v"></elevenlabs-convai>
+      {/* ElevenLabs Conversational AI Widget - Optional feature */}
+      {/* Errors are non-critical - widget will work if agent ID is valid */}
+      {/* Render only after mount to avoid hydration mismatch */}
+      {mounted && (
+        // @ts-ignore - Custom web component
+        <elevenlabs-convai agent-id="agent_5801kc9fq5m8fz2v8w5xvtq1ad9v"></elevenlabs-convai>
+      )}
     </div>
   )
 }

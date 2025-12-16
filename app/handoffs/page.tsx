@@ -1,10 +1,18 @@
+import { Suspense } from "react"
+import dynamic from "next/dynamic"
 import { AppShell } from "@/components/app-shell"
-import { HandoffsContent } from "@/components/handoffs-content"
+import { PageLoader } from "@/components/page-loader"
+
+const HandoffsContent = dynamic(() => import("@/components/handoffs-content").then(mod => ({ default: mod.HandoffsContent })), {
+  loading: () => <PageLoader />
+})
 
 export default function HandoffsPage() {
   return (
     <AppShell>
-      <HandoffsContent />
+      <Suspense fallback={<PageLoader />}>
+        <HandoffsContent />
+      </Suspense>
     </AppShell>
   )
 }
