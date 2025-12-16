@@ -54,3 +54,4 @@ export function useProperties(filters?: { city?: string; status?: string; type?:
   return { properties, loading, error }
 }
 
+

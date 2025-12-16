@@ -60,3 +60,4 @@ If you have a valid ElevenLabs agent ID, update it in `components/app-shell.tsx`
 
 The error message will still appear in the console but it's harmless and doesn't affect the app's core functionality.
 
+

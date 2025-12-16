@@ -56,3 +56,4 @@ After running the migration:
 
 The signup page has been updated to handle errors more gracefully. Even if the manual insert fails, the trigger should create the record automatically.
 
+

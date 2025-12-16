@@ -39,3 +39,4 @@ If you want to keep email confirmation enabled (for production-like testing):
 
 The sign-in page has been updated to show a helpful error message if email confirmation is required.
 
+

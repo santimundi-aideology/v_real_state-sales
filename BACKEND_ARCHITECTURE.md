@@ -474,3 +474,4 @@ Runs `scripts/test-db-connection.ts` to test database connectivity.
 - Arrays (TEXT[]) are used for multi-value fields (channels, features, etc.)
 - JSONB is used for complex nested data (qualification scores, metrics)
 
+

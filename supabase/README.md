@@ -139,3 +139,4 @@ Automatic `updated_at` triggers are set up on all tables with an `updated_at` co
 4. **Set up Realtime**: Enable Supabase Realtime for live updates
 5. **Create Views**: Consider creating database views for common queries
 
+

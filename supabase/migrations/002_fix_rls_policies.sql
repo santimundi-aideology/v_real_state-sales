@@ -44,3 +44,4 @@ CREATE POLICY "Allow authenticated insert integrations" ON public.integrations
 CREATE POLICY "Allow authenticated update integrations" ON public.integrations
   FOR UPDATE USING (auth.role() = 'authenticated');
 
+

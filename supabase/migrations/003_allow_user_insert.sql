@@ -13,3 +13,4 @@ CREATE POLICY "Users can insert own record" ON public.users
 -- Also allow users to read their own data (should already exist, but ensuring it's there)
 -- The existing "Users can read own data" policy should cover this
 
+

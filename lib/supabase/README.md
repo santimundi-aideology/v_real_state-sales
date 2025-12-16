@@ -140,3 +140,4 @@ Remember that Row Level Security (RLS) policies are enforced. Make sure:
 2. RLS policies allow the operations you're performing
 3. Check Supabase logs if queries fail unexpectedly
 
+
