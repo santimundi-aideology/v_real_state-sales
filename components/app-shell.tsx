@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/use-user"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
+import { VoiceAgentSelector } from "@/components/voice-agent-selector"
 
 const iconMap = {
   LayoutDashboard,
@@ -84,18 +85,6 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
         setCurrentRole(stored as UserRole)
       }
       
-      // Suppress ElevenLabs widget console errors (non-critical)
-      const originalError = console.error
-      console.error = function(...args: any[]) {
-        if (args[0] && typeof args[0] === 'string' && args[0].includes('ConversationalAI')) {
-          return // Suppress widget errors
-        }
-        originalError.apply(console, args)
-      }
-      
-      return () => {
-        console.error = originalError
-      }
     }
   }, [])
 
@@ -284,13 +273,8 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
         />
       )}
 
-      {/* ElevenLabs Conversational AI Widget - Optional feature */}
-      {/* Errors are non-critical - widget will work if agent ID is valid */}
-      {/* Render only after mount to avoid hydration mismatch */}
-      {mounted && (
-        // @ts-ignore - Custom web component
-        <elevenlabs-convai agent-id="agent_5801kc9fq5m8fz2v8w5xvtq1ad9v"></elevenlabs-convai>
-      )}
+      {/* Voice Agent Selector - Chat Bubble */}
+      {mounted && <VoiceAgentSelector />}
     </div>
   )
 }
