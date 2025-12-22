@@ -99,19 +99,26 @@ def log_node_input(user_input: str, node_name: str = ""):
     logger.info(f"  User query: {user_input}")
 
 
-def log_node_response(response: AIMessage, node_name: str = "", preview_length: int = 500):
+def log_node_response(response: AIMessage, node_name: str = "", preview_length: int = None):
     """
-    Log the LLM response from a node with preview.
+    Log the LLM response from a node.
     
     Args:
         response: The LLM response
         node_name: Optional node name for context
-        preview_length: Maximum length of response preview (default: 500)
+        preview_length: Maximum length of response preview (None = full response, default: None)
     """
     node_str = f" ({node_name})" if node_name else ""
     response_content = response.content if hasattr(response, 'content') else str(response)
-    response_preview = format_tool_output_preview(response_content, preview_length)
-    logger.info(f"Agent response{node_str}: {response_preview}")
+    
+    if preview_length is None:
+        # Log full response
+        logger.info(f"Agent response{node_str} (full):")
+        logger.info(response_content)
+    else:
+        # Log preview only
+        response_preview = format_tool_output_preview(response_content, preview_length)
+        logger.info(f"Agent response{node_str}: {response_preview}")
 
 
 def log_route_decision(route: str):

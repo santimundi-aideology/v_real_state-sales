@@ -40,3 +40,4 @@ __pycache__/
 
 # Logs (matches at any level)
 logs/
+*.log

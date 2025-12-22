@@ -42,7 +42,6 @@ import { getNavigationForRole, getRoleLabel } from "@/lib/role-permissions"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/use-user"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase/client"
 import { VoiceAgentSelector } from "@/components/voice-agent-selector"
 
 const iconMap = {
@@ -93,12 +92,6 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
     if (typeof window !== "undefined") {
       localStorage.setItem("fph-current-role", role)
     }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/auth/signin')
-    router.refresh()
   }
 
   // Get user initials for avatar - memoized
@@ -213,10 +206,6 @@ export function AppShell({ children, defaultRole = "sales_manager" }: AppShellPr
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/settings')}>
                     Preferences
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                    Logout
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

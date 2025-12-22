@@ -6,11 +6,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Set up logging FIRST, before any other imports that might use logging
-from src.agent.logging_config import setup_logging
+from src.utils.logging import setup_logging
 setup_logging()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 
@@ -53,7 +54,7 @@ async def lifespan(app: FastAPI):
     - Close the persistent MCP session
     """
     # Startup: Initialize MCP and build graph
-    await init_mcp(server_name="supabase")
+    await init_mcp()
     mcp_tools = await get_mcp_tools()
     
     logger.info(f"MCP tools loaded and cached: {[tool.name for tool in mcp_tools]}")
@@ -99,10 +100,15 @@ async def query(request: Request):
     - Invoke graph asynchronously (required for async MCP tools)
     """
     data = await request.json()
-cls
+
     query_text = data.get("query", "")
+    agent_persona = data.get("agent_persona", "") or "Be formal, warm and polite"  # Use default if empty or missing
+    user_role = data.get("user_role")  # Always provided by frontend
     
     logger.info(f"Received query request: {query_text[:100]}...")
+    if agent_persona:
+        logger.info(f"Agent persona provided: {agent_persona[:100]}...")
+    logger.info(f"User role: {user_role}")
     
     # Get the cached graph
     graph = app.state.agent_graph
@@ -111,7 +117,9 @@ cls
     result = await graph.ainvoke(
         {
             "messages": [HumanMessage(content=query_text)],
-            "route": "",
+            "user_input": query_text,
+            "agent_persona": agent_persona,
+            "user_role": user_role,
         }
     )
     
@@ -124,11 +132,26 @@ cls
         else:
             message_content = str(last_message)
     
-    # Log the response preview
-    logger.info(f"Response preview (first 500 chars): {message_content[:500]}")
+    # Log the full response
+    logger.info("=" * 80)
+    logger.info("FULL LLM RESPONSE:")
+    logger.info("=" * 80)
+    logger.info(message_content)
+    logger.info("=" * 80)
     
-    # Return the response content
-    return message_content
+    # Check if we have serialized customer data to return to frontend
+    serialized_customer_data = result.get("serialized_customer_data")
+    
+    if serialized_customer_data:
+        logger.info(f"Returning serialized customer data for {len(serialized_customer_data)} customer(s)")
+        # Return JSON response with both message and customer data
+        return JSONResponse({
+            "message": message_content,
+            "customer_data": serialized_customer_data
+        })
+    
+    # Return the response content as JSON for consistency (backward compatible)
+    return JSONResponse({"message": message_content})
 
 @app.get("/health")
 async def health():

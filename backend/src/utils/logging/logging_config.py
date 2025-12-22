@@ -26,12 +26,12 @@ def setup_logging(log_dir: str = None) -> None:
     Args:
         log_dir: Base directory for logs. If None, defaults to ../../logs from this file
     """
-    # Determine log directory - 2 levels up from this file (backend/logs/)
+    # Determine log directory - 3 levels up from this file (backend/logs/)
     if log_dir is None:
-        # This file is at backend/src/agent/logging_config.py
-        # So ../../logs from here is backend/logs/
+        # This file is at backend/src/utils/logging/logging_config.py
+        # So ../../../logs from here is backend/logs/
         current_file = Path(__file__)
-        log_dir = str(current_file.parent.parent.parent / "logs")
+        log_dir = str(current_file.parent.parent.parent.parent / "logs")
     
     # Create base logs directory if it doesn't exist
     base_log_path = Path(log_dir)

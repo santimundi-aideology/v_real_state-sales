@@ -44,10 +44,23 @@ const channelIcons = {
   email: Mail,
 }
 
+interface CustomerData {
+  name: string
+  preferred_channel: "call" | "whatsapp" | "email"
+  contact: string
+  language: "english" | "arabic"
+  city?: string | null
+  primary_segment?: string | null
+  budget_max?: number | null
+  property_type_pref?: string | null
+}
+
 export function CampaignsContent() {
   const [open, setOpen] = useState(false)
   const [showCampaignRun, setShowCampaignRun] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [showSummaryDialog, setShowSummaryDialog] = useState(false)
+  const [customerData, setCustomerData] = useState<CustomerData[]>([])
   
   // Form state
   const [campaignName, setCampaignName] = useState("")
@@ -71,6 +84,11 @@ export function CampaignsContent() {
   }
 
   const handleCreateCampaign = async () => {
+    // Get current user role from localStorage
+    const currentRole = typeof window !== "undefined" 
+      ? localStorage.getItem("fph-current-role") || "system"
+      : "system"
+    
     // Build the formatted message
     const selectedChannels = Object.entries(channels)
       .filter(([_, selected]) => selected)
@@ -84,10 +102,21 @@ export function CampaignsContent() {
         return channelNames[channel] || channel
       })
 
+    // Format compliance settings in LLM-friendly way
     const complianceOptions = []
-    if (complianceSettings.respectDNC) complianceOptions.push("Respect DNC List")
-    if (complianceSettings.requireConsent) complianceOptions.push("Require Consent")
-    if (complianceSettings.recordConversations) complianceOptions.push("Record Conversations")
+    if (complianceSettings.respectDNC) {
+      complianceOptions.push("require dnc")
+    } else {
+      complianceOptions.push("dnc not required")
+    }
+    if (complianceSettings.requireConsent) {
+      complianceOptions.push("require consent")
+    } else {
+      complianceOptions.push("consent not required")
+    }
+    if (complianceSettings.recordConversations) {
+      complianceOptions.push("record conversations")
+    }
 
     // Format segment display name
     const segmentNames: Record<string, string> = {
@@ -110,7 +139,6 @@ export function CampaignsContent() {
     if (targetSegment) parts.push(`target segment: ${segmentNames[targetSegment] || targetSegment}`)
     if (activeWindow) parts.push(`active window: ${windowNames[activeWindow] || activeWindow}`)
     if (selectedChannels.length > 0) parts.push(`channels: ${selectedChannels.join(", ")}`)
-    if (agentScript) parts.push(`agent script: ${agentScript}`)
     if (complianceOptions.length > 0) parts.push(`compliance settings: ${complianceOptions.join(", ")}`)
 
     const message = `Create a campaign for the following: ${parts.join("; ")}`
@@ -125,6 +153,8 @@ export function CampaignsContent() {
         },
         body: JSON.stringify({
           query: message,
+          agent_persona: agentScript || "", // Empty string, backend will use default
+          user_role: currentRole,
         }),
       })
 
@@ -134,6 +164,17 @@ export function CampaignsContent() {
 
       const data = await response.json()
       console.log("Campaign creation response:", data)
+      
+      // Check if response contains customer_data (new format)
+      if (data && typeof data === 'object' && data.customer_data && Array.isArray(data.customer_data)) {
+        // New format with customer data
+        setCustomerData(data.customer_data)
+        setShowSummaryDialog(true)
+      } else if (data && typeof data === 'object' && Array.isArray(data)) {
+        // Handle array response (if backend returns array directly)
+        setCustomerData(data)
+        setShowSummaryDialog(true)
+      }
       
       // Close dialog on success (form will reset on close)
       setOpen(false)
@@ -336,6 +377,100 @@ export function CampaignsContent() {
                 >
                   {isCreating ? "Creating..." : "Create & Launch"}
                 </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Customer Summary Dialog */}
+        <Dialog open={showSummaryDialog} onOpenChange={setShowSummaryDialog}>
+          <DialogContent className="glass-panel max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="font-serif text-xl">Campaign Summary</DialogTitle>
+              <DialogDescription>
+                Summary of prospects contacted during this campaign
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="text-sm text-muted-foreground">
+                Total prospects contacted: <span className="font-semibold text-foreground">{customerData.length}</span>
+              </div>
+              <div className="space-y-3">
+                {customerData.map((customer, index) => {
+                  // Map backend channel names to frontend icon keys
+                  const channelMap: Record<string, keyof typeof channelIcons> = {
+                    call: "phone",
+                    whatsapp: "whatsapp",
+                    email: "email",
+                    sms: "sms",
+                  }
+                  const iconKey = channelMap[customer.preferred_channel] || "whatsapp"
+                  const ChannelIcon = channelIcons[iconKey] || MessageCircle
+                  const channelColors: Record<string, string> = {
+                    phone: "text-blue-500",
+                    call: "text-blue-500",
+                    whatsapp: "text-emerald-500",
+                    email: "text-amber-500",
+                    sms: "text-violet-500",
+                  }
+                  
+                  return (
+                    <div
+                      key={index}
+                      className="p-4 rounded-lg border border-border/50 space-y-2"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold">{customer.name}</h4>
+                            <Badge variant="outline" className={cn("text-xs", channelColors[customer.preferred_channel])}>
+                              <ChannelIcon className="h-3 w-3 mr-1" />
+                              {customer.preferred_channel}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {customer.language}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">Contact:</span>
+                              <span>{customer.contact}</span>
+                            </div>
+                            {customer.city && (
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">City:</span>
+                                <span className="capitalize">{customer.city}</span>
+                              </div>
+                            )}
+                            {customer.primary_segment && (
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Segment:</span>
+                                <span className="capitalize">
+                                  {customer.primary_segment === "hnw" ? "High-Net-Worth" :
+                                   customer.primary_segment === "investor" ? "Property Investor" :
+                                   customer.primary_segment === "first_time" ? "First-Time Buyer" :
+                                   customer.primary_segment}
+                                </span>
+                              </div>
+                            )}
+                            {customer.budget_max && (
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Budget Max:</span>
+                                <span>${customer.budget_max.toLocaleString()}</span>
+                              </div>
+                            )}
+                            {customer.property_type_pref && (
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Property Type:</span>
+                                <span className="capitalize">{customer.property_type_pref}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </DialogContent>
