@@ -1,0 +1,42 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Virtual environments
+.venv/
+venv/
+
+
+# Python cache (matches at any level)
+__pycache__/
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs (matches at any level)
+logs/
