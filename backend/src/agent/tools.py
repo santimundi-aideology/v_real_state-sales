@@ -211,6 +211,62 @@ def send_email(message_template: str, subject: str, customers: List[Dict[str, st
         logger.error(error_msg, exc_info=True)
         return f"Error: {error_msg}"
 
+@tool
+async def send_whatsapp(message: str, to: str) -> str:
+    """
+    Send a WhatsApp message to a customer using Periskope MCP.
+    
+    Args:
+        message: Message text (use the pre-generated message from generated_messages)
+        to: WhatsApp number (will be formatted as phone@c.us if needed). Defaults to 19786908266 for testing.
+    
+    Returns:
+        Success message with queue_id, or error message if sending fails
+    """
+
+    to = "19786908266"
+    try:
+        logger.info(f"Sending WhatsApp to {to}")
+        
+        # Get the periskope_send_message tool from MCP
+        send_tool = get_periskope_tool("periskope_send_message")
+        
+        # Format phone number according to Periskope format: 919826000000@c.us
+        if "@c.us" not in to:
+            formatted_phone = f"{to}@c.us"
+        else:
+            formatted_phone = to
+        
+        # Prepare payload for periskope_send_message tool
+        payload = {
+            "phone": formatted_phone,
+            "message": message,
+        }
+        
+        logger.info(f"Invoking periskope_send_message with phone: {formatted_phone}")
+        
+        # Invoke the tool asynchronously (we're in an async context)
+        result = await send_tool.ainvoke(payload)
+        
+        # Extract the result text from the response
+        # The result is typically a list of message objects
+        if isinstance(result, list) and len(result) > 0:
+            result_text = result[0].get('text', str(result[0])) if isinstance(result[0], dict) else str(result[0])
+        else:
+            result_text = str(result)
+        
+        logger.info(f"WhatsApp send result: {result_text}")
+        
+        # Return a user-friendly success message
+        if "Message sent successfully" in result_text or "queue_id" in result_text:
+            return f"WhatsApp message sent successfully to {to}. {result_text}"
+        else:
+            return f"WhatsApp message sent to {to}. Response: {result_text}"
+        
+    except Exception as e:
+        error_msg = f"Failed to send WhatsApp: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return f"Error: {error_msg}"
 
 
 
