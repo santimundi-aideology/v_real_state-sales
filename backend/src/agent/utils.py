@@ -1,6 +1,4 @@
-"""
-Utility functions for agent operations.
-"""
+"""Utility functions for agent operations."""
 
 import os
 import json
@@ -17,81 +15,80 @@ logger = logging.getLogger(__name__)
 
 
 def get_last_tool_message(messages: List[BaseMessage]) -> Optional[ToolMessage]:
-    """
-    Extract the last tool message from a list of messages.
-    
+    """Extract the last tool message from a list of messages.
+
     Args:
-        messages: List of messages from the state
-        
+        messages: List of messages from the state.
+
     Returns:
-        The last ToolMessage if found, None otherwise
+        The last ToolMessage if found, None otherwise.
     """
-    if not messages:
-        return None
-    
-    # Iterate in reverse to find the last tool message
-    for msg in reversed(messages):
-        if isinstance(msg, ToolMessage):
-            return msg
-    
-    return None
+    return next((msg for msg in reversed(messages) if isinstance(msg, ToolMessage)), None)
 
 
-def format_value(value):
-    """
-    Format a value for display in formatted strings.
-    
+def format_value(value) -> str:
+    """Format a value for display in formatted strings.
+
     Args:
-        value: The value to format (can be None, bool, str, int, float, etc.)
-    
+        value: The value to format (can be None, bool, str, int, float, etc.).
+
     Returns:
-        A string representation of the value:
-        - None values return "NULL"
-        - Boolean values return lowercase string ("true"/"false")
-        - Other values return their string representation
+        String representation: "NULL" for None, lowercase for bools, str() otherwise.
     """
     if value is None:
         return "NULL"
-    elif isinstance(value, bool):
+    if isinstance(value, bool):
         return str(value).lower()
-    else:
-        return str(value)
+    return str(value)
 
 
 def format_prospect_row(prospect: dict) -> str:
-    """
-    Format a prospect dictionary into a single-line string with all fields.
-    
+    """Format a prospect dictionary into a single-line string with all fields.
+
     Args:
-        prospect: A dictionary containing prospect data from the database
-    
+        prospect: Dictionary containing prospect data from the database.
+
     Returns:
-        A formatted string with all prospect fields in key=value format,
-        separated by commas
+        Formatted string with all prospect fields in key=value format, comma-separated.
     """
-    row_parts = [
-        f"id={format_value(prospect.get('id'))}",
-        f"full_name={format_value(prospect.get('full_name'))}",
-        f"language={format_value(prospect.get('language'))}",
-        f"city={format_value(prospect.get('city'))}",
-        f"primary_segment={format_value(prospect.get('primary_segment'))}",
-        f"phone={format_value(prospect.get('phone'))}",
-        f"whatsapp_number={format_value(prospect.get('whatsapp_number'))}",
-        f"email={format_value(prospect.get('email'))}",
-        f"preferred_channel={format_value(prospect.get('preferred_channel'))}",
-        f"consent_status={format_value(prospect.get('consent_status'))}",
-        f"dnc={format_value(prospect.get('dnc'))}",
-        f"budget_min={format_value(prospect.get('budget_min'))}",
-        f"budget_max={format_value(prospect.get('budget_max'))}",
-        f"property_type_pref={format_value(prospect.get('property_type_pref'))}",
-        f"beds_min={format_value(prospect.get('beds_min'))}",
-        f"created_at={format_value(prospect.get('created_at'))}",
-        f"updated_at={format_value(prospect.get('updated_at'))}",
+    fields = [
+        'id', 'full_name', 'language', 'city', 'primary_segment', 'phone',
+        'whatsapp_number', 'email', 'preferred_channel', 'consent_status',
+        'dnc', 'budget_min', 'budget_max', 'property_type_pref', 'beds_min',
+        'created_at', 'updated_at'
     ]
-    
-    return ", ".join(row_parts)
+    return ", ".join(f"{field}={format_value(prospect.get(field))}" for field in fields)
 
 
+
+
+def _calculate_campaign_metrics(total_outreach: int) -> Dict[str, Any]:
+    """Calculate campaign metrics (response rate, click rate, appointments).
+
+    Args:
+        total_outreach: Total number of prospects contacted.
+
+    Returns:
+        Dictionary with calculated metrics.
+    """
+    if random.random() < 0.7:
+        response_rate = round(random.uniform(50.0, 100.0), 2)
+    else:
+        response_rate = round(random.uniform(0.0, 50.0), 2)
+
+    if total_outreach == 0:
+        booked_appointments = 0
+    else:
+        half = total_outreach // 2
+        booked_appointments = random.randint(0, half) if random.random() < 0.8 else random.randint(half + 1, total_outreach)
+
+    return {
+        'total_outreach': total_outreach,
+        'connect_rate': 100.0,
+        'response_rate': response_rate,
+        'click_rate': response_rate,
+        'booked_appointments': booked_appointments,
+    }
 
 
 def create_campaign_record(
@@ -108,30 +105,26 @@ def create_campaign_record(
     active_window_end: Optional[str] = None,
     contacted_prospects: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """
-    Create a new campaign record in the campaigns table.
-    
+    """Create a new campaign record in the campaigns table.
+
     Args:
-        name: Campaign name
-        target_city: 'riyadh', 'jeddah', or 'all'
-        target_segment: 'hnw', 'investor', 'first_time', or 'all'
-        channels: List of channels ('call', 'sms', 'whatsapp', 'email')
-        agent_persona: Agent persona/script text
-        created_by: Creator identifier (user role)
-        respect_dnc: Whether to respect DNC list (default True)
-        require_consent: Whether to require consent (default True)
-        record_conversations: Whether to record conversations (default True)
-        active_window_start: Optional start time in 'HH:MM:SS' format
-        active_window_end: Optional end time in 'HH:MM:SS' format
-        contacted_prospects: Optional list of contacted prospect data (for JSONB field)
-    
+        name: Campaign name.
+        target_city: 'riyadh', 'jeddah', or 'all'.
+        target_segment: 'hnw', 'investor', 'first_time', or 'all'.
+        channels: List of channels ('call', 'sms', 'whatsapp', 'email').
+        agent_persona: Agent persona/script text.
+        created_by: Creator identifier (user role).
+        respect_dnc: Whether to respect DNC list.
+        require_consent: Whether to require consent.
+        record_conversations: Whether to record conversations.
+        active_window_start: Optional start time in 'HH:MM:SS' format.
+        active_window_end: Optional end time in 'HH:MM:SS' format.
+        contacted_prospects: Optional list of contacted prospect data.
+
     Returns:
-        Dictionary with 'success' (bool) and either 'campaign_id' (str) or 'error' (str)
+        Dictionary with 'success' (bool) and either 'campaign_id' (str) or 'error' (str).
     """
     try:
-        supabase = get_supabase_client()
-        
-        # Prepare campaign data for insertion
         insert_data: Dict[str, Any] = {
             'name': name,
             'target_city': target_city.lower(),
@@ -142,105 +135,53 @@ def create_campaign_record(
             'require_consent': require_consent,
             'record_conversations': record_conversations,
             'created_by': created_by,
+            'contacted_prospects': contacted_prospects or [],
         }
-        
-        # Add optional time window fields if provided
+
         if active_window_start:
             insert_data['active_window_start'] = active_window_start
         if active_window_end:
             insert_data['active_window_end'] = active_window_end
-        
-        # Add contacted_prospects as JSONB array
-        if contacted_prospects is not None:
-            insert_data['contacted_prospects'] = contacted_prospects
-        else:
-            insert_data['contacted_prospects'] = []
-        
-        # Calculate metrics
-        total_outreach = len(contacted_prospects) if contacted_prospects else 0
-        connect_rate = 100.0  # Always 100%
-        
-        # Generate response_rate: random between 0-100%, but mostly above 50%
-        # Use a weighted approach: 70% chance of being 50-100%, 30% chance of being 0-50%
-        if random.random() < 0.7:
-            response_rate = round(random.uniform(50.0, 100.0), 2)
-        else:
-            response_rate = round(random.uniform(0.0, 50.0), 2)
-        
-        # click_rate: same as response_rate
-        click_rate = response_rate
-        
-        # booked_appointments: random between 0 and total_outreach, skewed towards half or less
-        # Use a weighted approach: 80% chance of being <= half, 20% chance of being > half
-        if total_outreach == 0:
-            booked_appointments = 0
-        else:
-            half_prospects = total_outreach // 2
-            if random.random() < 0.8:
-                # Skewed towards half or less
-                booked_appointments = random.randint(0, half_prospects)
-            else:
-                # Can be more than half, but still within bounds
-                booked_appointments = random.randint(half_prospects + 1, total_outreach)
-        
-        # Add calculated metrics to insert_data
-        insert_data['total_outreach'] = total_outreach
-        insert_data['connect_rate'] = connect_rate
-        insert_data['response_rate'] = response_rate
-        insert_data['click_rate'] = click_rate
-        insert_data['booked_appointments'] = booked_appointments
-        
-        logger.info(f"create_campaign_record - Metrics: outreach={total_outreach}, connect={connect_rate}%, "
-                   f"response={response_rate}%, click={click_rate}%, appointments={booked_appointments}")
-        
-        # Insert campaign
-        response = supabase.table("campaigns").insert(insert_data).execute()
-        
+
+        # Calculate and add campaign metrics (response rate, appointments, etc.)
+        insert_data.update(_calculate_campaign_metrics(len(contacted_prospects) if contacted_prospects else 0))
+
+        # Insert campaign record into database
+        response = get_supabase_client().table("campaigns").insert(insert_data).execute()
+
         if hasattr(response, 'error') and response.error:
-            error_msg = f"Database insert error: {response.error}"
-            logger.error(f"create_campaign_record - {error_msg}")
-            return {'success': False, 'error': error_msg}
-        
-        if not response.data or len(response.data) == 0:
-            logger.error("create_campaign_record - No data returned from insert")
+            logger.error(f"Database insert error: {response.error}")
+            return {'success': False, 'error': f"Database insert error: {response.error}"}
+
+        if not response.data:
             return {'success': False, 'error': 'Campaign creation failed - no data returned'}
-        
-        campaign_id = response.data[0].get('id')
-        campaign_name = response.data[0].get('name')
-        
-        logger.info(f"create_campaign_record - Successfully created campaign: {campaign_name} (ID: {campaign_id})")
-        
-        return {'success': True, 'campaign_id': str(campaign_id), 'campaign_name': campaign_name}
-        
+
+        campaign = response.data[0]
+        logger.info(f"Created campaign: {campaign['name']} (ID: {campaign['id']})")
+        return {'success': True, 'campaign_id': str(campaign['id']), 'campaign_name': campaign['name']}
+
     except Exception as e:
-        error_msg = f"Failed to create campaign: {str(e)}"
-        logger.error(f"create_campaign_record - {error_msg}", exc_info=True)
-        return {'success': False, 'error': error_msg}
+        logger.error(f"Failed to create campaign: {str(e)}", exc_info=True)
+        return {'success': False, 'error': f"Failed to create campaign: {str(e)}"}
 
 
 
 
 def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    Serialize CustomerData list to JSON-serializable format for frontend display.
-    Also builds contacted_prospects list for campaign record.
-    
+    """Serialize CustomerData list to JSON-serializable format.
+
     Args:
-        customer_data: List of CustomerData objects to serialize
-    
+        customer_data: List of CustomerData objects to serialize.
+
     Returns:
         Tuple of (serialized_data, contacted_prospects):
-        - serialized_data: List of dictionaries for frontend display
-        - contacted_prospects: List of dictionaries for campaign record
+        - serialized_data: List of dicts for frontend display.
+        - contacted_prospects: List of dicts for campaign record.
     """
-    serialized_data = []
-    contacted_prospects = []
-    
-    for customer in customer_data:
-        # Serialize for frontend display
-        customer_dict = {
+    def _to_dict(customer: CustomerData, use_channel: bool = False) -> Dict[str, Any]:
+        """Convert CustomerData to dictionary."""
+        d = {
             "name": customer.name,
-            "preferred_channel": customer.preferred_channel,
             "contact": customer.contact,
             "language": customer.language,
             "city": customer.city,
@@ -250,24 +191,17 @@ def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dic
             "dnc": customer.dnc,
             "consent_status": customer.consent_status,
         }
-        serialized_data.append(customer_dict)
-        
-        # Build contacted_prospects entry for campaign record
-        contacted_prospects.append({
-            "name": customer.name,
-            "contact": customer.contact,
-            "channel": customer.preferred_channel,
-            "language": customer.language,
-            "city": customer.city,
-            "primary_segment": customer.primary_segment,
-            "budget_max": customer.budget_max,
-            "property_type_pref": customer.property_type_pref,
-            "dnc": customer.dnc,
-            "consent_status": customer.consent_status,
-        })
-    
-    logger.info(f"serialize_customer_data - Serialized {len(serialized_data)} customer(s) to JSON format")
-    
+        if use_channel:
+            d["channel"] = customer.preferred_channel
+        else:
+            d["preferred_channel"] = customer.preferred_channel
+        return d
+
+    # Create two versions: one for frontend (with preferred_channel) and one for DB (with channel)
+    serialized_data = [_to_dict(c) for c in customer_data]
+    contacted_prospects = [_to_dict(c, use_channel=True) for c in customer_data]
+
+    logger.info(f"Serialized {len(serialized_data)} customer(s) to JSON format")
     return serialized_data, contacted_prospects
 
 
@@ -326,87 +260,75 @@ def _save_refresh_token(refresh_token: str, path: Optional[str] = None) -> None:
 
 
 def _refresh_access_token(refresh_token: str) -> Tuple[str, str]:
-    """
-    Refresh Microsoft access token using refresh token.
-    
+    """Refresh Microsoft Graph API access token using refresh token.
+
     Args:
-        refresh_token: Microsoft refresh token
-    
+        refresh_token: Refresh token from ms_tokens.json.
+
     Returns:
-        Tuple of (access_token, refresh_token_after_rotation)
-    
+        Tuple of (access_token, new_refresh_token).
+
     Raises:
-        RuntimeError: If token refresh fails
+        RuntimeError: If required environment variables are missing or token refresh fails.
     """
     tenant_id = os.environ.get("MS_TENANT_ID")
     client_id = os.environ.get("MS_CLIENT_ID")
     client_secret = os.environ.get("MS_CLIENT_SECRET")
-    
+
     if not all([tenant_id, client_id, client_secret]):
-        raise RuntimeError("Missing Microsoft OAuth credentials. Set MS_TENANT_ID, MS_CLIENT_ID, and MS_CLIENT_SECRET environment variables.")
-    
-    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-    
-    data = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "scope": "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Send",
-    }
-    
-    try:
-        r = requests.post(token_url, data=data, timeout=30)
-        r.raise_for_status()
-        j = r.json()
-        return j["access_token"], j.get("refresh_token", refresh_token)
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Failed to refresh access token: {str(e)}")
+        raise RuntimeError("Missing Microsoft OAuth credentials")
+
+    response = requests.post(
+        f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "scope": "https://graph.microsoft.com/User.Read https://graph.microsoft.com/Mail.Send",
+        },
+        timeout=30
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data["access_token"], data.get("refresh_token", refresh_token)
 
 
 
 def send_email_via_graph(to_email: str, subject: str, html: str, token_path: Optional[str] = None) -> None:
-    """
-    Send an email via Microsoft Graph API.
-    
+    """Send an email via Microsoft Graph API.
+
     Requires ms_tokens.json containing {"refresh_token": "..."} in the backend directory.
     Automatically refreshes the access token if needed.
-    
+
     Args:
-        to_email: Recipient email address
-        subject: Email subject
-        html: Email body (HTML format)
-        token_path: Optional path to tokens file. Defaults to backend/ms_tokens.json
-    
+        to_email: Recipient email address.
+        subject: Email subject.
+        html: Email body (HTML format).
+        token_path: Optional path to tokens file. Defaults to backend/ms_tokens.json.
+
     Raises:
-        RuntimeError: If token loading, refresh, or email sending fails
+        RuntimeError: If token loading, refresh, or email sending fails.
     """
     rt = _load_refresh_token(token_path)
     access_token, new_rt = _refresh_access_token(rt)
-    
-    # Refresh token rotation happens sometimes — persist the new one if returned
+
     if new_rt != rt:
         _save_refresh_token(new_rt, token_path)
-    
-    payload = {
-        "message": {
-            "subject": subject,
-            "body": {"contentType": "HTML", "content": html},
-            "toRecipients": [{"emailAddress": {"address": to_email}}],
+
+    response = requests.post(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "HTML", "content": html},
+                "toRecipients": [{"emailAddress": {"address": to_email}}],
+            },
+            "saveToSentItems": True,
         },
-        "saveToSentItems": True,
-    }
-    
-    try:
-        r = requests.post(
-            "https://graph.microsoft.com/v1.0/me/sendMail",
-            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=30,
-        )
-        
-        # Success is commonly 202 Accepted
-        if r.status_code != 202:
-            raise RuntimeError(f"Graph sendMail failed: {r.status_code} {r.text}")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Failed to send email via Microsoft Graph: {str(e)}")
+        timeout=30,
+    )
+
+    if response.status_code != 202:
+        raise RuntimeError(f"Graph sendMail failed: {response.status_code} {response.text}")

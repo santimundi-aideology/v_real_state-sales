@@ -45,4 +45,9 @@ logs/
 # Microsoft OAuth tokens
 ms_tokens.json
 ms_auth.py
+
+# Test files
 test_execute_sql.py
+test_mcp.py
+test_periskope_mcp.py
+test_whatsapp_send.py

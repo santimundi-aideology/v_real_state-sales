@@ -37,7 +37,8 @@ def setup_logging(log_dir: str = None) -> None:
     base_log_path = Path(log_dir)
     base_log_path.mkdir(exist_ok=True)
     
-    # Create today's date folder (YYYY-MM-DD format)
+    # Create today's date folder (YYYY-MM-DD format) for daily log organization
+    # This makes it easy to find logs from a specific date
     today = datetime.now().strftime("%Y-%m-%d")
     daily_log_path = base_log_path / today
     daily_log_path.mkdir(exist_ok=True)
@@ -47,38 +48,43 @@ def setup_logging(log_dir: str = None) -> None:
     errors_log_file = daily_log_path / "errors.log"
     
     # For dev: delete existing log files to ensure overwrite (not append)
+    # This prevents log files from growing indefinitely during development
     if app_log_file.exists():
         app_log_file.unlink()
     if errors_log_file.exists():
         errors_log_file.unlink()
     
-    # Define log format
+    # Define log format with timestamp, module name, level, and message
+    # This format makes it easy to trace which module generated each log entry
     log_format = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # Get root logger
+    # Get root logger (captures all logging from all modules)
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)  # Capture all levels at root
     
-    # Remove existing handlers to avoid duplicates
+    # Remove existing handlers to avoid duplicates (important if setup_logging is called multiple times)
     root_logger.handlers.clear()
     
     # Handler 1: App log (INFO and above) - overwrite mode for dev
+    # RotatingFileHandler automatically rotates when file reaches maxBytes
     app_handler = RotatingFileHandler(
         app_log_file,
-        mode='w',  # Write mode (overwrite) - for dev purposes
-        maxBytes=10 * 1024 * 1024,  # 10MB per file
-        backupCount=5,  # Keep 5 backup files
+        mode='w',  # Write mode (overwrite) - for dev purposes (fresh logs each run)
+        maxBytes=10 * 1024 * 1024,  # 10MB per file (prevents disk space issues)
+        backupCount=5,  # Keep 5 backup files (app.log.1, app.log.2, etc.)
         encoding='utf-8'
     )
     app_handler.setLevel(logging.INFO)
     app_handler.setFormatter(log_format)
+    # Filter to only log INFO and above (excludes DEBUG)
     app_handler.addFilter(lambda record: record.levelno >= logging.INFO)
     root_logger.addHandler(app_handler)
     
     # Handler 2: Errors log (ERROR and CRITICAL only) - overwrite mode for dev
+    # Separate error log makes it easy to find critical issues without sifting through all logs
     errors_handler = RotatingFileHandler(
         errors_log_file,
         mode='w',  # Write mode (overwrite) - for dev purposes
@@ -92,17 +98,20 @@ def setup_logging(log_dir: str = None) -> None:
     
     # Disable console/stdout logging for our application logs only
     # Remove any existing StreamHandlers (console handlers) from root logger
+    # This prevents duplicate logs in console and files
     for handler in root_logger.handlers[:]:
         if isinstance(handler, logging.StreamHandler) and not isinstance(handler, RotatingFileHandler):
             root_logger.removeHandler(handler)
     
     # Allow uvicorn's startup/shutdown messages to show in console
     # But disable uvicorn access logs (HTTP request logs) to reduce noise
+    # This keeps console clean while still showing important server events
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_access_logger.handlers.clear()
     uvicorn_access_logger.propagate = False
     
     # Log the setup using root logger to ensure it goes to file handlers
+    # This creates a clear marker in logs showing when the application started
     separator = "=" * 80
     root_logger.info(separator)
     root_logger.info(f"NEW EXECUTION RUN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -112,6 +121,7 @@ def setup_logging(log_dir: str = None) -> None:
     root_logger.info(f"Error logs: {errors_log_file}")
     
     # Flush handlers to ensure separator is written immediately
+    # This ensures the startup marker appears even if the app crashes early
     for handler in root_logger.handlers:
         handler.flush()
 

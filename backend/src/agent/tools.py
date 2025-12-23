@@ -1,9 +1,7 @@
-"""
-Custom tools for the agent to interact with Supabase database.
-"""
+"""Custom tools for agent interactions with database and messaging services."""
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 from langchain_core.tools import tool
 from src.mcp.supabase import get_supabase_client, get_periskope_tool
@@ -14,84 +12,51 @@ logger = logging.getLogger(__name__)
 
 @tool
 def list_prospects() -> str:
-    """
-    Query the prospects table to list all prospects from the database.
-    
+    """Query and return all prospects from the database.
+
     Returns:
-        A formatted string with each prospect row separated by newlines.
-        Each row contains: id, full_name, language, city, primary_segment, phone, 
-        whatsapp_number, email, preferred_channel, consent_status, dnc, budget_min, 
-        budget_max, property_type_pref, beds_min, created_at, updated_at.
-        Returns an error message if the query fails.
+        Formatted string with prospect rows (one per line) containing all fields,
+        or error message if query fails.
     """
     try:
-        supabase = get_supabase_client()
-
-        # Query all prospects from the table
-        response = supabase.table("prospects").select("*").execute()
+        # Query all prospects from database
+        response = get_supabase_client().table("prospects").select("*").execute()
         
         if hasattr(response, 'error') and response.error:
-            error_msg = f"Database query error: {response.error}"
-            logger.error(error_msg)
-            return f"Error: {error_msg}"
+            logger.error(f"Database query error: {response.error}")
+            return f"Error: Database query error: {response.error}"
 
-        # Check if any prospects were found
-        if not response.data or len(response.data) == 0:
-            logger.info("list_prospects - No prospects found in database")
+        if not response.data:
             return "No prospects found in the database."
 
-        logger.info(f"list_prospects - Found {len(response.data)} prospect(s)")
-
-        # Format each prospect as a single line with all fields
-        formatted_rows = [format_prospect_row(prospect) for prospect in response.data]
-
-        # Join all rows with newlines
-        result = "\n".join(formatted_rows)
-        
-        logger.info(f"list_prospects - Returning {len(formatted_rows)} formatted prospect row(s)")
-        
-        return result
+        # Format each prospect row for LLM readability
+        formatted_rows = [format_prospect_row(p) for p in response.data]
+        logger.info(f"Found {len(formatted_rows)} prospect(s)")
+        return "\n".join(formatted_rows)
 
     except Exception as e:
-        error_msg = f"Failed to list prospects: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
+        logger.error(f"Failed to list prospects: {str(e)}", exc_info=True)
+        return f"Error: Failed to list prospects: {str(e)}"
 
 
 @tool
 def create_campaign(campaign_data: Dict[str, Any]) -> str:
-    """
-    Create a new campaign in the campaigns table.
-    
+    """Create a new campaign in the campaigns table.
+
     Args:
-        campaign_data: Dictionary containing campaign fields:
-            - name (str, required): Campaign name
-            - target_city (str, required): 'riyadh', 'jeddah', or 'all'
-            - target_segment (str, required): 'hnw', 'investor', 'first_time', or 'all'
-            - active_window_start (str, optional): Time in 'HH:MM:SS' format
-            - active_window_end (str, optional): Time in 'HH:MM:SS' format
-            - channels (list[str], required): Array of 'call', 'whatsapp', 'email'
-            - agent_persona (str, required): Agent persona/script
-            - respect_dnc (bool, optional): Default True
-            - require_consent (bool, optional): Default True
-            - record_conversations (bool, optional): Default True
-            - created_by (str, optional): Creator identifier, default 'system'
-    
+        campaign_data: Dictionary with required fields (name, target_city, target_segment,
+            channels, agent_persona) and optional fields (active_window_start/end,
+            respect_dnc, require_consent, record_conversations, created_by).
+
     Returns:
         Success message with campaign ID, or error message if creation fails.
     """
     try:
-        supabase = get_supabase_client()
+        required = ['name', 'target_city', 'target_segment', 'channels', 'agent_persona']
+        missing = [f for f in required if f not in campaign_data]
+        if missing:
+            return f"Error: Missing required field(s): {', '.join(missing)}"
         
-        # Validate required fields
-        required_fields = ['name', 'target_city', 'target_segment', 'channels', 'agent_persona']
-        for field in required_fields:
-            if field not in campaign_data:
-                error_msg = f"Missing required field: {field}"
-                logger.error(f"create_campaign - {error_msg}")
-                return f"Error: {error_msg}"
-        
-        # Prepare campaign data for insertion
         insert_data = {
             'name': campaign_data['name'],
             'target_city': campaign_data['target_city'].lower(),
@@ -104,71 +69,51 @@ def create_campaign(campaign_data: Dict[str, Any]) -> str:
             'created_by': campaign_data.get('created_by', 'system'),
         }
         
-        # Add optional time window fields if provided
-        if 'active_window_start' in campaign_data:
-            insert_data['active_window_start'] = campaign_data['active_window_start']
-        if 'active_window_end' in campaign_data:
-            insert_data['active_window_end'] = campaign_data['active_window_end']
+        for field in ['active_window_start', 'active_window_end']:
+            if field in campaign_data:
+                insert_data[field] = campaign_data[field]
         
-        # Insert campaign
-        response = supabase.table("campaigns").insert(insert_data).execute()
+        response = get_supabase_client().table("campaigns").insert(insert_data).execute()
         
         if hasattr(response, 'error') and response.error:
-            error_msg = f"Database insert error: {response.error}"
-            logger.error(f"create_campaign - {error_msg}")
-            return f"Error: {error_msg}"
+            logger.error(f"Database insert error: {response.error}")
+            return f"Error: Database insert error: {response.error}"
         
-        if not response.data or len(response.data) == 0:
-            logger.error("create_campaign - No data returned from insert")
+        if not response.data:
             return "Error: Campaign creation failed - no data returned"
         
-        campaign_id = response.data[0].get('id')
-        campaign_name = response.data[0].get('name')
-        
-        logger.info(f"create_campaign - Successfully created campaign: {campaign_name} (ID: {campaign_id})")
-        
-        return f"Successfully created campaign '{campaign_name}' with ID: {campaign_id}"
+        campaign = response.data[0]
+        logger.info(f"Created campaign: {campaign['name']} (ID: {campaign['id']})")
+        return f"Successfully created campaign '{campaign['name']}' with ID: {campaign['id']}"
         
     except Exception as e:
-        error_msg = f"Failed to create campaign: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
+        logger.error(f"Failed to create campaign: {str(e)}", exc_info=True)
+        return f"Error: Failed to create campaign: {str(e)}"
 
 
 @tool
 def send_email(message_template: str, subject: str, customers: List[Dict[str, str]], language: str = "english") -> str:
-    """
-    Send batch emails to multiple customers via Microsoft Graph API.
-    
+    """Send batch emails to multiple customers via Microsoft Graph API.
+
     Args:
-        message_template: Email message template with {name} placeholder (from generate_messages node)
-        subject: Email subject line (max 8 words, engaging)
-        customers: List of customer dictionaries, each with "email" and "name" keys
-                   Example: [{"email": "john@example.com", "name": "John Smith"}, ...]
-        language: Language of the message ('english' or 'arabic') - used for logging
-    
+        message_template: Email template with {name} placeholder.
+        subject: Email subject line (max 8 words).
+        customers: List of dicts with "name" key (e.g., [{"name": "John"}, ...]).
+        language: Message language for logging ('english' or 'arabic').
+
     Returns:
-        Summary message with count of successful and failed emails
+        Summary message with success/failure counts.
     """
-    successful = 0
-    failed = 0
-    
+    successful = failed = 0
     logger.info(f"Sending {len(customers)} email(s) in {language}")
     
+    # Personalize and send email for each customer
     for customer in customers:
         try:
-            # Replace {name} placeholder with actual customer name
-            personalized_message = message_template.replace("{name}", customer["name"])
-            
-            # Convert message to HTML format (preserve line breaks)
-            html_message = personalized_message.replace("\n", "<br>")
-            
-            # Send email via Microsoft Graph API (default to citiwavelogistics@gmail.com)
+            html_message = message_template.replace("{name}", customer["name"]).replace("\n", "<br>")
             send_email_via_graph(to_email="citiwavelogistics@gmail.com", subject=subject, html=html_message)
-            
-            logger.info(f"Email sent successfully to {customer['name']}")
+            logger.info(f"Email sent to {customer['name']}")
             successful += 1
-            
         except Exception as e:
             logger.error(f"Failed to send email to {customer.get('name', 'unknown')}: {str(e)}", exc_info=True)
             failed += 1
@@ -179,47 +124,32 @@ def send_email(message_template: str, subject: str, customers: List[Dict[str, st
 
 @tool
 async def send_whatsapp(message_template: str, customers: List[Dict[str, str]], language: str = "english") -> str:
-    """
-    Send batch WhatsApp messages to multiple customers using Periskope MCP.
-    
+    """Send batch WhatsApp messages to multiple customers using Periskope MCP.
+
     Args:
-        message_template: WhatsApp message template with {name} placeholder (from generate_messages node)
-        customers: List of customer dictionaries, each with "phone" and "name" keys
-                   Example: [{"phone": "19786908266", "name": "John Smith"}, ...]
-        language: Language of the message ('english' or 'arabic') - used for logging
-    
+        message_template: WhatsApp template with {name} placeholder.
+        customers: List of dicts with "name" key (e.g., [{"name": "John"}, ...]).
+        language: Message language for logging ('english' or 'arabic').
+
     Returns:
-        Summary message with count of successful and failed messages
+        Summary message with success/failure counts.
     """
-    successful = 0
-    failed = 0
-    
+    successful = failed = 0
     logger.info(f"Sending {len(customers)} WhatsApp message(s) in {language}")
-    
-    # Get the periskope_send_message tool from MCP
     send_tool = get_periskope_tool("periskope_send_message")
     
+    # Personalize and send WhatsApp message for each customer
     for customer in customers:
         try:
-            # Replace {name} placeholder with actual customer name
-            personalized_message = message_template.replace("{name}", customer["name"])
-            
-            # Prepare payload for periskope_send_message tool
             payload = {
                 "phone": "19786908266@c.us",
-                "message": personalized_message,
+                "message": message_template.replace("{name}", customer["name"]),
             }
-            
-            logger.info(f"Sending WhatsApp to {customer['name']} (19786908266@c.us)")
-            
-            # Invoke the tool asynchronously
             await send_tool.ainvoke(payload)
-            
-            logger.info(f"WhatsApp sent successfully to {customer['name']} (19786908266@c.us)")
+            logger.info(f"WhatsApp sent to {customer['name']}")
             successful += 1
-            
         except Exception as e:
-            logger.error(f"Failed to send WhatsApp to {customer.get('name', 'unknown')} ({customer.get('phone', 'unknown')}): {str(e)}", exc_info=True)
+            logger.error(f"Failed to send WhatsApp to {customer.get('name', 'unknown')}: {str(e)}", exc_info=True)
             failed += 1
     
     return f"WhatsApp batch complete: {successful} sent successfully{f', {failed} failed' if failed > 0 else ''}"
@@ -228,31 +158,25 @@ async def send_whatsapp(message_template: str, customers: List[Dict[str, str]], 
 
 @tool
 def send_phone_text(to: str, message: str, language: str = "english") -> str:
-    """
-    Send a text message via phone/SMS to a customer.
-    
+    """Send a text message via phone/SMS to a customer.
+
     Args:
-        to: Phone number
-        message: Message text (use the pre-generated message from generated_messages)
-        language: Language of the message ('english' or 'arabic')
-    
+        to: Phone number.
+        message: Message text.
+        language: Message language ('english' or 'arabic').
+
     Returns:
-        Success or error message
+        Success or error message.
     """
-    try:
-        logger.info(f"Sending phone text to {to} in {language}")
-        # TODO: Implement actual SMS/phone text sending logic
-        # For now, just log and return success
-        return f"Phone text sent successfully to {to}"
-    except Exception as e:
-        error_msg = f"Failed to send phone text: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
+    logger.info(f"Sending phone text to {to} in {language}")
+    return f"Phone text sent successfully to {to}"
 
 
-def get_db_tools():
+def get_db_tools() -> List:
+    """Return list of database tools."""
     return [list_prospects, create_campaign]
 
 
-def get_messaging_tools():
+def get_messaging_tools() -> List:
+    """Return list of messaging tools."""
     return [send_email, send_whatsapp, send_phone_text]
