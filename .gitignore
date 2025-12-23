@@ -41,3 +41,8 @@ __pycache__/
 # Logs (matches at any level)
 logs/
 *.log
+
+# Microsoft OAuth tokens
+ms_tokens.json
+ms_auth.py
+test_execute_sql.py
