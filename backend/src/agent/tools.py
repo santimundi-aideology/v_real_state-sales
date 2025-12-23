@@ -3,11 +3,11 @@ Custom tools for the agent to interact with Supabase database.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from langchain_core.tools import tool
 from src.mcp.supabase import get_supabase_client, get_periskope_tool
-from src.agent.utils import format_prospect_row
+from src.agent.utils import format_prospect_row, send_email_via_graph
 
 logger = logging.getLogger(__name__)
 
@@ -136,92 +136,82 @@ def create_campaign(campaign_data: Dict[str, Any]) -> str:
 
 
 @tool
-def send_email(to: str, subject: str, message: str, language: str = "english") -> str:
+def send_email(message_template: str, subject: str, customers: List[Dict[str, str]], language: str = "english") -> str:
     """
-    Send an email to a customer.
+    Send batch emails to multiple customers via Microsoft Graph API.
     
     Args:
-        to: Email address
-        subject: Email subject line
-        message: Email body (use the pre-generated message from generated_messages)
-        language: Language of the message ('english' or 'arabic')
+        message_template: Email message template with {name} placeholder (from generate_messages node)
+        subject: Email subject line (max 8 words, engaging)
+        customers: List of customer dictionaries, each with "email" and "name" keys
+                   Example: [{"email": "john@example.com", "name": "John Smith"}, ...]
+        language: Language of the message ('english' or 'arabic') - used for logging
     
     Returns:
-        Success or error message
+        Summary message with count of successful and failed emails
     """
     try:
-        logger.info(f"Sending email to {to} in {language}")
-        # TODO: Implement actual email sending logic
-        # For now, just log and return success
-        return f"Email sent successfully to {to}"
+        if not customers:
+            return "No customers provided - no emails sent"
+        
+        logger.info(f"Sending {len(customers)} email(s) in {language}")
+        
+        successful = 0
+        failed = 0
+        errors = []
+        
+        for customer in customers:
+            email = customer.get("email")
+            name = customer.get("name")
+            
+            if not email:
+                logger.warning(f"Skipping customer {name}: no email address provided")
+                failed += 1
+                errors.append(f"{name}: missing email")
+                continue
+            
+            if not name:
+                logger.warning(f"Skipping email {email}: no name provided")
+                failed += 1
+                errors.append(f"{email}: missing name")
+                continue
+            
+            try:
+                # Replace {name} placeholder with actual customer name
+                personalized_message = message_template.replace("{name}", name)
+                
+                # Convert message to HTML format (preserve line breaks)
+                html_message = personalized_message.replace("\n", "<br>")
+                
+                # Send email via Microsoft Graph API
+                send_email_via_graph(to_email=email, subject=subject, html=html_message)
+                
+                logger.info(f"Email sent successfully to {name} ({email})")
+                successful += 1
+                
+            except Exception as e:
+                error_msg = f"Failed to send email to {name} ({email}): {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                failed += 1
+                errors.append(f"{name} ({email}): {str(e)}")
+        
+        # Build summary message
+        summary = f"Email batch complete: {successful} sent successfully"
+        if failed > 0:
+            summary += f", {failed} failed"
+            if errors:
+                summary += f". Errors: {'; '.join(errors[:3])}"  # Show first 3 errors
+                if len(errors) > 3:
+                    summary += f" (and {len(errors) - 3} more)"
+        
+        return summary
+    
     except Exception as e:
-        error_msg = f"Failed to send email: {str(e)}"
+        error_msg = f"Failed to send email batch: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return f"Error: {error_msg}"
 
 
-@tool
-async def send_whatsapp(message: str, to: str) -> str:
-    """
-    Send a WhatsApp message to a customer using Periskope MCP.
-    
-    Args:
-        message: Message text (use the pre-generated message from generated_messages)
-        to: WhatsApp number (will be formatted as phone@c.us if needed). Defaults to 19786908266 for testing.
-    
-    Returns:
-        Success message with queue_id, or error message if sending fails
-    """
-
-    to = "19786908266"
-    try:
-        logger.info(f"Sending WhatsApp to {to}")
-        
-        # Get the periskope_send_message tool from MCP
-        send_tool = get_periskope_tool("periskope_send_message")
-        
-        if not send_tool:
-            error_msg = "periskope_send_message tool not available. Ensure periskope-mcp server is initialized."
-            logger.error(error_msg)
-            return f"Error: {error_msg}"
-        
-        # Format phone number according to Periskope format: 919826000000@c.us
-        # If phone number doesn't already have @c.us, add it
-        if "@c.us" not in to:
-            formatted_phone = f"{to}@c.us"
-        else:
-            formatted_phone = to
-        
-        # Prepare payload for periskope_send_message tool
-        payload = {
-            "phone": formatted_phone,
-            "message": message,
-        }
-        
-        logger.info(f"Invoking periskope_send_message with phone: {formatted_phone}")
-        
-        # Invoke the tool asynchronously (we're in an async context)
-        result = await send_tool.ainvoke(payload)
-        
-        # Extract the result text from the response
-        # The result is typically a list of message objects
-        if isinstance(result, list) and len(result) > 0:
-            result_text = result[0].get('text', str(result[0])) if isinstance(result[0], dict) else str(result[0])
-        else:
-            result_text = str(result)
-        
-        logger.info(f"WhatsApp send result: {result_text}")
-        
-        # Return a user-friendly success message
-        if "Message sent successfully" in result_text or "queue_id" in result_text:
-            return f"WhatsApp message sent successfully to {to}. {result_text}"
-        else:
-            return f"WhatsApp message sent to {to}. Response: {result_text}"
-        
-    except Exception as e:
-        error_msg = f"Failed to send WhatsApp: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
 
 
 @tool

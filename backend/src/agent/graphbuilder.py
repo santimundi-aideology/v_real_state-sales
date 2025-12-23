@@ -15,18 +15,20 @@ class Agent_GraphBuilder:
         self.mcp_tools = mcp_tools
         self.graph = StateGraph(State)
 
+        
+
     def build_graph(self):
         """
         Builds the graph used to execute agent queries based on the user's query.
         """
         # Combine MCP tools with custom database tools and messaging tools for ToolNode
-        all_tools = self.mcp_tools + get_db_tools() + get_messaging_tools()
 
 
         # Initialize the agent node
-        agent_node = AgentNode(self.llm, all_tools)
+        agent_node = AgentNode(self.llm, self.mcp_tools)
 
-        
+        all_tools = self.mcp_tools + get_db_tools() + get_messaging_tools()
+                
         # Create ToolNode with all tools (MCP + database + messaging) and handle_tool_errors=True
         tool_node = ToolNode(all_tools, handle_tool_errors=True)
 

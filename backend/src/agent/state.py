@@ -19,6 +19,8 @@ class CustomerData(BaseModel):
     primary_segment: Optional[str] = Field(default=None, description="Primary segment (hnw, investor, first_time)")
     budget_max: Optional[float] = Field(default=None, description="Maximum budget")
     property_type_pref: Optional[str] = Field(default=None, description="Preferred property type")
+    dnc: Optional[bool] = Field(default=None, description="Do Not Call status (True if on DNC list, False or None if not)")
+    consent_status: Optional[str] = Field(default=None, description="Consent status (opted_in, opted_out, unknown)")
 
 
 class CustomersOutput(BaseModel):
@@ -27,9 +29,22 @@ class CustomersOutput(BaseModel):
 
 
 class MessagesOutput(BaseModel):
-    """Generated messages in both languages."""
-    english_message: str = Field(description="Campaign message in English")
-    arabic_message: str = Field(description="Campaign message in Arabic (equivalent translation)")
+    """Generated message templates in both languages with {name} placeholders."""
+    english_message: str = Field(description="Campaign message template in English with {name} placeholder")
+    arabic_message: str = Field(description="Campaign message template in Arabic (equivalent translation) with {name} placeholder")
+
+
+class CampaignDetails(BaseModel):
+    """Campaign details extracted from user input."""
+    name: str = Field(description="Campaign name")
+    target_city: Literal["riyadh", "jeddah", "all"] = Field(description="Target city")
+    target_segment: Literal["hnw", "investor", "first_time", "all"] = Field(description="Target segment")
+    channels: List[Literal["call", "sms", "whatsapp", "email"]] = Field(description="Communication channels")
+    respect_dnc: bool = Field(default=True, description="Respect DNC list")
+    require_consent: bool = Field(default=True, description="Require consent")
+    record_conversations: bool = Field(default=True, description="Record conversations")
+    active_window_start: Optional[str] = Field(default=None, description="Active window start time (HH:MM:SS)")
+    active_window_end: Optional[str] = Field(default=None, description="Active window end time (HH:MM:SS)")
 
 
 class State(TypedDict):

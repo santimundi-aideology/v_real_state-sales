@@ -11,4 +11,6 @@ uvicorn
 dotenv
 mcp
 supabase
+postmarker
 langchain-mcp-adapters
+requests

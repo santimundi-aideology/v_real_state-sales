@@ -1,7 +1,7 @@
 import logging
 from langgraph.graph import END
-from src.agent.state import State, RouteOutput, MessagesOutput, CustomerData, CustomersOutput
-from src.agent.prompts import ROUTE_INPUT_PROMPT, CAMPAIGN_PROMPT, EXTRACT_CUSTOMERS_PROMPT, GENERATE_MESSAGES_PROMPT, SEND_MESSAGES_PROMPT
+from src.agent.state import State, RouteOutput, MessagesOutput, CustomerData, CustomersOutput, CampaignDetails
+from src.agent.prompts import ROUTE_INPUT_PROMPT, CAMPAIGN_PROMPT, EXTRACT_CUSTOMERS_PROMPT, GENERATE_MESSAGES_PROMPT, SEND_MESSAGES_PROMPT, EXTRACT_CAMPAIGN_DETAILS_PROMPT
 from src.utils.logging import (
     log_node_entry,
     log_tool_calls,
@@ -10,18 +10,22 @@ from src.utils.logging import (
     log_node_response,
     log_route_decision,
 )
-from src.agent.tools import get_db_tools, get_messaging_tools
+from src.agent.utils import create_campaign_record, serialize_customer_data, get_last_tool_message
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from src.agent.tools import get_db_tools, get_messaging_tools
 
 logger = logging.getLogger(__name__)
 
 
 class AgentNode:
 
-    def __init__(self, llm, tools):
+    def __init__(self, llm, mcp_tools):
         self.llm = llm
-        self.tools = tools
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        self.mcp_tools = mcp_tools
+        self.db_tools = get_db_tools()
+        self.messaging_tools = get_messaging_tools()
+
+        
 
     def route_input(self, state: State):
         log_node_entry("route_input")
@@ -87,7 +91,8 @@ class AgentNode:
             *state["messages"]
         ]
         
-        response = self.llm_with_tools.invoke(messages)
+        llm_with_tools = self.llm.bind_tools(self.mcp_tools + self.db_tools)
+        response = llm_with_tools.invoke(messages)
         
         log_node_response(response, "campaign_node")
         log_tool_calls(response, "campaign_node")
@@ -105,32 +110,22 @@ class AgentNode:
         
         log_node_input("Extracting customer data from prospect information", "extract_customer_details_node")
         
-        # Get the last message from campaign_node (should contain prospect data)
-        # Filter out tool messages and only use the final AI response
-        messages_list = state.get("messages", [])
-        if not messages_list:
-            logger.warning("No messages in state - cannot extract customer data")
+        
+        # Use helper function to get the last tool message
+        last_tool_message = get_last_tool_message(state.get("messages", []))
+        
+        if not last_tool_message:
+            logger.warning("No tool message found in state messages")
             return {}
         
-        # Find the last AI message (from campaign_node) - skip tool messages
-        last_ai_message = None
-        for msg in reversed(messages_list):
-            if isinstance(msg, AIMessage) and not isinstance(msg, ToolMessage):
-                last_ai_message = msg
-                break
-        
-        if not last_ai_message:
-            logger.warning("No AI message found in state messages")
-            return {}
-        
-        # Extract the content from the last AI message (prospect data)
+        # Extract the content from the last tool message (prospect data)
         prospect_data_content = ""
-        if hasattr(last_ai_message, 'content'):
-            prospect_data_content = last_ai_message.content
+        if hasattr(last_tool_message, 'content'):
+            prospect_data_content = last_tool_message.content
         else:
-            prospect_data_content = str(last_ai_message)
+            prospect_data_content = str(last_tool_message)
         
-        logger.info(f"Using prospect data from campaign_node (length: {len(prospect_data_content)} chars)")
+        logger.info(f"Using prospect data from last tool message (length: {len(prospect_data_content)} chars)")
         
         llm_with_structured_output = self.llm.with_structured_output(CustomersOutput, method="json_schema")
         
@@ -197,9 +192,14 @@ class AgentNode:
         log_node_entry("send_messages_node")
         
         generated_messages = state.get("generated_messages", {})
+        customer_data = state.get("customer_data", [])
         
         if not generated_messages:
             logger.warning("No generated messages available")
+            return {}
+        
+        if not customer_data:
+            logger.warning("No customer data available for personalization")
             return {}
         
         # Get the last message from state['messages'] - this should be from campaign_node
@@ -220,18 +220,24 @@ class AgentNode:
             campaign_message_content = str(last_message)
         
         logger.info(f"Using prospect data from campaign_node message (length: {len(campaign_message_content)} chars)")
+        logger.info(f"Personalizing messages for {len(customer_data)} customer(s)")
         
         
         # Build SystemMessage with instructions
         system_content = SEND_MESSAGES_PROMPT
         
-        # Build HumanMessage with data (pre-generated messages and prospect data)
+        # Build HumanMessage with data (pre-generated messages, customer data, and prospect data)
         human_content_parts = []
         
         if generated_messages:
             human_content_parts.append("## Pre-generated Messages:")
             human_content_parts.append(f"English: {generated_messages.get('english', '')}")
             human_content_parts.append(f"Arabic: {generated_messages.get('arabic', '')}")
+        
+        # Include customer data for personalization
+        human_content_parts.append("\n## Customer Data (for personalization):")
+        for customer in customer_data:
+            human_content_parts.append(f"- Name: {customer.name}, Channel: {customer.preferred_channel}, Contact: {customer.contact}, Language: {customer.language}")
         
         # Include the prospect data from campaign_node message
         human_content_parts.append("\n## Prospect Data from Campaign:")
@@ -241,10 +247,12 @@ class AgentNode:
         
         messages = [
             SystemMessage(content=system_content),
+            *state["messages"],
             HumanMessage(content=human_content),
         ]
         
-        response = self.llm_with_tools.invoke(messages)
+        llm_with_tools = self.llm.bind_tools(self.messaging_tools)
+        response = llm_with_tools.invoke(messages)
         
         log_node_response(response, "send_messages_node")
         log_tool_calls(response, "send_messages_node")
@@ -253,7 +261,7 @@ class AgentNode:
 
     
     def serialize_customer_data_node(self, state: State):
-        """Serialize customer data to JSON format for frontend display."""
+        """Serialize customer data to JSON format for frontend display and create campaign record."""
         log_node_entry("serialize_customer_data_node")
         
         customer_data = state.get("customer_data", [])
@@ -262,22 +270,49 @@ class AgentNode:
             logger.warning("No customer data available to serialize")
             return {}
         
-        # Serialize CustomerData list to JSON-serializable format
-        serialized_data = []
-        for customer in customer_data:
-            customer_dict = {
-                "name": customer.name,
-                "preferred_channel": customer.preferred_channel,
-                "contact": customer.contact,
-                "language": customer.language,
-                "city": customer.city,
-                "primary_segment": customer.primary_segment,
-                "budget_max": customer.budget_max,
-                "property_type_pref": customer.property_type_pref,
-            }
-            serialized_data.append(customer_dict)
+        # Extract campaign details from user_input
+        user_input = state.get("user_input", "")
+        agent_persona = state.get("agent_persona", "Be formal, warm and polite")
+        user_role = state.get("user_role", "system")
         
-        logger.info(f"Serialized {len(serialized_data)} customer(s) to JSON format")
+        logger.info("Extracting campaign details from user input")
+        
+        # Use structured output to extract campaign details
+        llm_with_structured_output = self.llm.with_structured_output(CampaignDetails, method="json_schema")
+        
+        messages = [
+            SystemMessage(content=EXTRACT_CAMPAIGN_DETAILS_PROMPT),
+            HumanMessage(content=user_input),
+        ]
+        
+        campaign_details = llm_with_structured_output.invoke(messages)
+        
+        logger.info(f"Extracted campaign details: name={campaign_details.name}, city={campaign_details.target_city}, segment={campaign_details.target_segment}")
+        
+        # Serialize CustomerData list to JSON-serializable format using helper function
+        serialized_data, contacted_prospects = serialize_customer_data(customer_data)
+        
+        # Create campaign record in database
+        logger.info("Creating campaign record in database")
+        campaign_result = create_campaign_record(
+            name=campaign_details.name,
+            target_city=campaign_details.target_city,
+            target_segment=campaign_details.target_segment,
+            channels=campaign_details.channels,
+            agent_persona=agent_persona,
+            created_by=user_role,
+            respect_dnc=campaign_details.respect_dnc,
+            require_consent=campaign_details.require_consent,
+            record_conversations=campaign_details.record_conversations,
+            active_window_start=campaign_details.active_window_start,
+            active_window_end=campaign_details.active_window_end,
+            contacted_prospects=contacted_prospects,
+        )
+        
+        if campaign_result.get('success'):
+            logger.info(f"Campaign created successfully: {campaign_result.get('campaign_name')} (ID: {campaign_result.get('campaign_id')})")
+        else:
+            logger.error(f"Failed to create campaign: {campaign_result.get('error')}")
         
         # Store serialized data in state for the API to return
         return {"serialized_customer_data": serialized_data}
