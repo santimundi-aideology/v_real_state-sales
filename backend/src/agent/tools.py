@@ -150,123 +150,79 @@ def send_email(message_template: str, subject: str, customers: List[Dict[str, st
     Returns:
         Summary message with count of successful and failed emails
     """
-    try:
-        if not customers:
-            return "No customers provided - no emails sent"
-        
-        logger.info(f"Sending {len(customers)} email(s) in {language}")
-        
-        successful = 0
-        failed = 0
-        errors = []
-        
-        for customer in customers:
-            email = customer.get("email")
-            name = customer.get("name")
-            
-            if not email:
-                logger.warning(f"Skipping customer {name}: no email address provided")
-                failed += 1
-                errors.append(f"{name}: missing email")
-                continue
-            
-            if not name:
-                logger.warning(f"Skipping email {email}: no name provided")
-                failed += 1
-                errors.append(f"{email}: missing name")
-                continue
-            
-            try:
-                # Replace {name} placeholder with actual customer name
-                personalized_message = message_template.replace("{name}", name)
-                
-                # Convert message to HTML format (preserve line breaks)
-                html_message = personalized_message.replace("\n", "<br>")
-                
-                # Send email via Microsoft Graph API
-                send_email_via_graph(to_email=email, subject=subject, html=html_message)
-                
-                logger.info(f"Email sent successfully to {name} ({email})")
-                successful += 1
-                
-            except Exception as e:
-                error_msg = f"Failed to send email to {name} ({email}): {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                failed += 1
-                errors.append(f"{name} ({email}): {str(e)}")
-        
-        # Build summary message
-        summary = f"Email batch complete: {successful} sent successfully"
-        if failed > 0:
-            summary += f", {failed} failed"
-            if errors:
-                summary += f". Errors: {'; '.join(errors[:3])}"  # Show first 3 errors
-                if len(errors) > 3:
-                    summary += f" (and {len(errors) - 3} more)"
-        
-        return summary
+    successful = 0
+    failed = 0
     
-    except Exception as e:
-        error_msg = f"Failed to send email batch: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
+    logger.info(f"Sending {len(customers)} email(s) in {language}")
+    
+    for customer in customers:
+        try:
+            # Replace {name} placeholder with actual customer name
+            personalized_message = message_template.replace("{name}", customer["name"])
+            
+            # Convert message to HTML format (preserve line breaks)
+            html_message = personalized_message.replace("\n", "<br>")
+            
+            # Send email via Microsoft Graph API (default to citiwavelogistics@gmail.com)
+            send_email_via_graph(to_email="citiwavelogistics@gmail.com", subject=subject, html=html_message)
+            
+            logger.info(f"Email sent successfully to {customer['name']}")
+            successful += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to send email to {customer.get('name', 'unknown')}: {str(e)}", exc_info=True)
+            failed += 1
+    
+    return f"Email batch complete: {successful} sent successfully{f', {failed} failed' if failed > 0 else ''}"
+
+        
 
 @tool
-async def send_whatsapp(message: str, to: str) -> str:
+async def send_whatsapp(message_template: str, customers: List[Dict[str, str]], language: str = "english") -> str:
     """
-    Send a WhatsApp message to a customer using Periskope MCP.
+    Send batch WhatsApp messages to multiple customers using Periskope MCP.
     
     Args:
-        message: Message text (use the pre-generated message from generated_messages)
-        to: WhatsApp number (will be formatted as phone@c.us if needed). Defaults to 19786908266 for testing.
+        message_template: WhatsApp message template with {name} placeholder (from generate_messages node)
+        customers: List of customer dictionaries, each with "phone" and "name" keys
+                   Example: [{"phone": "19786908266", "name": "John Smith"}, ...]
+        language: Language of the message ('english' or 'arabic') - used for logging
     
     Returns:
-        Success message with queue_id, or error message if sending fails
+        Summary message with count of successful and failed messages
     """
-
-    to = "19786908266"
-    try:
-        logger.info(f"Sending WhatsApp to {to}")
-        
-        # Get the periskope_send_message tool from MCP
-        send_tool = get_periskope_tool("periskope_send_message")
-        
-        # Format phone number according to Periskope format: 919826000000@c.us
-        if "@c.us" not in to:
-            formatted_phone = f"{to}@c.us"
-        else:
-            formatted_phone = to
-        
-        # Prepare payload for periskope_send_message tool
-        payload = {
-            "phone": formatted_phone,
-            "message": message,
-        }
-        
-        logger.info(f"Invoking periskope_send_message with phone: {formatted_phone}")
-        
-        # Invoke the tool asynchronously (we're in an async context)
-        result = await send_tool.ainvoke(payload)
-        
-        # Extract the result text from the response
-        # The result is typically a list of message objects
-        if isinstance(result, list) and len(result) > 0:
-            result_text = result[0].get('text', str(result[0])) if isinstance(result[0], dict) else str(result[0])
-        else:
-            result_text = str(result)
-        
-        logger.info(f"WhatsApp send result: {result_text}")
-        
-        # Return a user-friendly success message
-        if "Message sent successfully" in result_text or "queue_id" in result_text:
-            return f"WhatsApp message sent successfully to {to}. {result_text}"
-        else:
-            return f"WhatsApp message sent to {to}. Response: {result_text}"
-        
-    except Exception as e:
-        error_msg = f"Failed to send WhatsApp: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return f"Error: {error_msg}"
+    successful = 0
+    failed = 0
+    
+    logger.info(f"Sending {len(customers)} WhatsApp message(s) in {language}")
+    
+    # Get the periskope_send_message tool from MCP
+    send_tool = get_periskope_tool("periskope_send_message")
+    
+    for customer in customers:
+        try:
+            # Replace {name} placeholder with actual customer name
+            personalized_message = message_template.replace("{name}", customer["name"])
+            
+            # Prepare payload for periskope_send_message tool
+            payload = {
+                "phone": "19786908266@c.us",
+                "message": personalized_message,
+            }
+            
+            logger.info(f"Sending WhatsApp to {customer['name']} (19786908266@c.us)")
+            
+            # Invoke the tool asynchronously
+            await send_tool.ainvoke(payload)
+            
+            logger.info(f"WhatsApp sent successfully to {customer['name']} (19786908266@c.us)")
+            successful += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to send WhatsApp to {customer.get('name', 'unknown')} ({customer.get('phone', 'unknown')}): {str(e)}", exc_info=True)
+            failed += 1
+    
+    return f"WhatsApp batch complete: {successful} sent successfully{f', {failed} failed' if failed > 0 else ''}"
 
 
 

@@ -109,7 +109,11 @@ SEND_MESSAGES_PROMPT = """Send personalized campaign messages to prospects.
   - customers: List of customer dicts with "email" and "name" keys, e.g. [{"email": "john@example.com", "name": "John Smith"}, ...]
   - language: "english" or "arabic"
   - Call this tool TWICE: once for English customers, once for Arabic customers
-- send_whatsapp(message, to) - to parameter required
+- send_whatsapp(message_template, customers, language)
+  - message_template: The message template from generate_messages node (with {name} placeholder)
+  - customers: List of customer dicts with "phone" and "name" keys, e.g. [{"phone": "19786908266", "name": "John Smith"}, ...]
+  - language: "english" or "arabic"
+  - Call this tool TWICE: once for English customers, once for Arabic customers
 - send_phone_text(to, message, language)
 
 ## Process:
@@ -120,7 +124,10 @@ SEND_MESSAGES_PROMPT = """Send personalized campaign messages to prospects.
    - For Arabic customers: Call send_email(arabic_template, subject, arabic_customers_list, "arabic")
    - The tool will automatically replace {name} with actual names and send all emails
 3. For WHATSAPP customers:
-   - For each customer: Replace {name} in template, format with line breaks, call send_whatsapp(personalized_message, to)
+   - Generate subject (max 8 words, engaging)
+   - For English customers: Call send_whatsapp(english_template, english_customers_list, "english")
+   - For Arabic customers: Call send_whatsapp(arabic_template, arabic_customers_list, "arabic")
+   - The tool will automatically replace {name} with actual names and send all messages
 4. For CALL/SMS customers:
    - For each customer: Replace {name} in template, call send_phone_text(personalized_message, to, language)
 

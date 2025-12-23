@@ -92,6 +92,8 @@ def format_prospect_row(prospect: dict) -> str:
     return ", ".join(row_parts)
 
 
+
+
 def create_campaign_record(
     name: str,
     target_city: str,
@@ -216,6 +218,8 @@ def create_campaign_record(
         return {'success': False, 'error': error_msg}
 
 
+
+
 def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Serialize CustomerData list to JSON-serializable format for frontend display.
@@ -267,6 +271,8 @@ def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dic
     return serialized_data, contacted_prospects
 
 
+
+
 def _load_refresh_token(path: Optional[str] = None) -> str:
     """
     Load refresh token from ms_tokens.json file.
@@ -298,6 +304,7 @@ def _load_refresh_token(path: Optional[str] = None) -> str:
     return rt
 
 
+
 def _save_refresh_token(refresh_token: str, path: Optional[str] = None) -> None:
     """
     Save refresh token to ms_tokens.json file.
@@ -314,6 +321,8 @@ def _save_refresh_token(refresh_token: str, path: Optional[str] = None) -> None:
     # Keep just what we need
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"refresh_token": refresh_token}, f, indent=2)
+
+
 
 
 def _refresh_access_token(refresh_token: str) -> Tuple[str, str]:
@@ -353,6 +362,7 @@ def _refresh_access_token(refresh_token: str) -> Tuple[str, str]:
         return j["access_token"], j.get("refresh_token", refresh_token)
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to refresh access token: {str(e)}")
+
 
 
 def send_email_via_graph(to_email: str, subject: str, html: str, token_path: Optional[str] = None) -> None:
