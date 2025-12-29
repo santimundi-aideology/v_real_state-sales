@@ -7,7 +7,7 @@ including node entry/exit logging, tool call logging, and debug information.
 
 import logging
 from typing import List, Any, Optional
-from langchain_core.messages import ToolMessage, AIMessage
+from langchain_core.messages import ToolMessage, AIMessage, BaseMessage
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,52 @@ def log_tool_calls(response: AIMessage, context: str = ""):
         for i, tool_call in enumerate(response.tool_calls, 1):
             tool_name = tool_call.get('name', 'unknown')
             tool_args = tool_call.get('args', {})
-            logger.info(f"  Tool call {i}: {tool_name}")
+            tool_call_id = tool_call.get('id', 'unknown')
+            logger.info(f"  Tool call {i}: {tool_name} (id: {tool_call_id})")
             logger.info(f"    Arguments: {tool_args}")
+
+
+def log_tool_call_with_response(tool_call: dict, tool_message: ToolMessage, context: str = "", preview_length: int = 2000):
+    """
+    Log a tool call together with its response for better visibility.
+    
+    This pairs each tool call with its corresponding tool response, making it easier
+    to see what each tool returned immediately after it was called.
+    
+    Args:
+        tool_call: The tool call dictionary from AIMessage.tool_calls
+        tool_message: The corresponding ToolMessage with the tool's response
+        context: Optional context string (e.g., node name)
+        preview_length: Maximum length of response preview (default: 2000 chars for better visibility)
+    """
+    tool_name = tool_call.get('name', 'unknown')
+    tool_args = tool_call.get('args', {})
+    tool_call_id = tool_call.get('id', 'unknown')
+    
+    context_str = f" ({context})" if context else ""
+    logger.info(f"--- Tool Call{context_str} ---")
+    logger.info(f"Tool: {tool_name} (id: {tool_call_id})")
+    logger.info(f"Arguments: {tool_args}")
+    
+    # Extract and log the tool response
+    tool_content = getattr(tool_message, 'content', '')
+    if isinstance(tool_content, list):
+        # Handle list content (common in MCP tools)
+        tool_content = str(tool_content)
+    
+    content_str = str(tool_content)
+    logger.info(f"Response length: {len(content_str)} chars")
+    
+    if len(content_str) <= preview_length:
+        logger.info(f"Response (full):")
+        logger.info(content_str)
+    else:
+        preview = content_str[:preview_length]
+        logger.info(f"Response (preview, {preview_length}/{len(content_str)} chars):")
+        logger.info(f"{preview}...")
+        logger.info(f"[Truncated - showing first {preview_length} of {len(content_str)} chars]")
+    
+    logger.info(f"--- End Tool Call: {tool_name} ---")
 
 
 def format_tool_output_preview(content: str, max_length: int = 500) -> str:
@@ -103,10 +147,86 @@ def log_tool_messages(messages: List[Any], context: str = "", preview_length: in
         for i, tool_msg in enumerate(tool_messages, 1):
             tool_name = getattr(tool_msg, 'name', 'unknown')
             tool_content = getattr(tool_msg, 'content', '')
+            tool_id = getattr(tool_msg, 'tool_call_id', 'unknown')
+            
+            # Handle different content types
+            if isinstance(tool_content, list):
+                tool_content = str(tool_content)
+            content_str = str(tool_content)
+            
+            logger.info(f"  Tool message {i}: {tool_name} (call_id: {tool_id})")
+            logger.info(f"    Response length: {len(content_str)} chars")
             # Format preview to avoid log spam from large outputs (e.g., SQL results)
-            content_preview = format_tool_output_preview(tool_content, preview_length)
-            logger.info(f"  Tool message {i}: {tool_name}")
+            content_preview = format_tool_output_preview(content_str, preview_length)
             logger.info(f"    Response preview: {content_preview}")
+
+
+def log_tool_calls_with_responses(ai_response: AIMessage, messages: List[BaseMessage], context: str = ""):
+    """
+    Log tool calls paired with their corresponding responses for better visibility.
+    
+    This function matches each tool call from an AI response with its corresponding
+    tool message response, showing them together for easier debugging.
+    
+    Args:
+        ai_response: The AIMessage containing tool calls
+        messages: List of all messages (should include ToolMessage responses)
+        context: Optional context string (e.g., node name)
+    """
+    if not hasattr(ai_response, 'tool_calls') or not ai_response.tool_calls:
+        return
+    
+    context_str = f" ({context})" if context else ""
+    logger.info(f"Tool Calls and Responses{context_str}:")
+    
+    # Create a map of tool_call_id -> ToolMessage for quick lookup
+    tool_message_map = {}
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            tool_call_id = getattr(msg, 'tool_call_id', None)
+            if tool_call_id:
+                tool_message_map[tool_call_id] = msg
+    
+    # Log each tool call with its response
+    for i, tool_call in enumerate(ai_response.tool_calls, 1):
+        tool_call_id = tool_call.get('id', 'unknown')
+        tool_name = tool_call.get('name', 'unknown')
+        tool_args = tool_call.get('args', {})
+        
+        logger.info(f"\n  [{i}] Tool Call: {tool_name}")
+        logger.info(f"      Call ID: {tool_call_id}")
+        logger.info(f"      Arguments: {tool_args}")
+        
+        # Find corresponding tool message
+        tool_message = tool_message_map.get(tool_call_id)
+        if tool_message:
+            tool_content = getattr(tool_message, 'content', '')
+            if isinstance(tool_content, list):
+                tool_content = str(tool_content)
+            
+            content_str = str(tool_content)
+            logger.info(f"      Response length: {len(content_str)} chars")
+            
+            # Show full response if reasonable, otherwise preview
+            if len(content_str) <= 2000:
+                logger.info(f"      Response (full):")
+                # Split into lines for better readability
+                for line in content_str.split('\n')[:50]:  # Limit to first 50 lines
+                    logger.info(f"        {line}")
+                if content_str.count('\n') > 50:
+                    logger.info(f"        ... [showing first 50 lines of {content_str.count('\n') + 1} total lines]")
+            else:
+                preview = content_str[:2000]
+                logger.info(f"      Response (preview, first 2000/{len(content_str)} chars):")
+                for line in preview.split('\n')[:30]:  # Limit preview to first 30 lines
+                    logger.info(f"        {line}")
+                if preview.count('\n') > 30:
+                    logger.info(f"        ... [truncated]")
+                logger.info(f"      [Full response: {len(content_str)} chars - truncated for readability]")
+        else:
+            logger.warning(f"      ⚠ No response found for tool call {tool_call_id}")
+    
+    logger.info("")  # Empty line for separation
 
 
 def log_node_input(user_input: str, node_name: str = ""):
@@ -160,4 +280,45 @@ def log_route_decision(route: str):
         route: The selected route
     """
     logger.info(f"Route: {route}")
+
+
+def log_tool_message_details(tool_message: ToolMessage, preview_length: int = 1000):
+    """
+    Log detailed information about a tool message for debugging.
+    
+    This function logs the tool message name, call ID, content type, structure,
+    and a preview of the extracted content. Useful for debugging tool message
+    extraction issues.
+    
+    Args:
+        tool_message: The ToolMessage to log details about
+        preview_length: Maximum length of content preview to show (default: 1000 chars)
+    """
+    tool_name = getattr(tool_message, 'name', 'unknown')
+    tool_call_id = getattr(tool_message, 'tool_call_id', 'unknown')
+    raw_content = getattr(tool_message, 'content', '')
+    
+    logger.info(f"Found tool message: {tool_name} (call_id: {tool_call_id})")
+    logger.info(f"Raw content type: {type(raw_content).__name__}")
+    
+    if isinstance(raw_content, list):
+        logger.info(f"Content is list with {len(raw_content)} items")
+        if raw_content and isinstance(raw_content[0], dict):
+            logger.info(f"First item keys: {list(raw_content[0].keys())}")
+
+
+def log_extracted_content_preview(content: str, label: str = "Content", preview_length: int = 1000):
+    """
+    Log a preview of extracted content with length information.
+    
+    Args:
+        content: The content string to log
+        label: Label for the content (e.g., "Prospect data")
+        preview_length: Maximum length of preview to show (default: 1000 chars)
+    """
+    logger.info(f"{label} (length: {len(content)} chars)")
+    if len(content) > preview_length:
+        logger.info(f"{label} preview (first {preview_length}/{len(content)} chars): {content[:preview_length]}")
+    else:
+        logger.info(f"{label} preview: {content}")
 

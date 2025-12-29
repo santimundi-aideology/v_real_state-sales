@@ -14,6 +14,9 @@ from src.utils.logging.logging_utils import (
     log_node_input,
     log_node_response,
     log_route_decision,
+    log_tool_calls_with_responses,
+    log_tool_message_details,
+    log_extracted_content_preview,
 )
 
 __all__ = [
@@ -24,5 +27,8 @@ __all__ = [
     "log_node_input",
     "log_node_response",
     "log_route_decision",
+    "log_tool_calls_with_responses",
+    "log_tool_message_details",
+    "log_extracted_content_preview",
 ]
 

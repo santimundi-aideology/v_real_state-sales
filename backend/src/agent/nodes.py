@@ -5,22 +5,19 @@ from langgraph.graph import END
 from src.agent.state import State, RouteOutput, MessagesOutput, CustomersOutput, CampaignDetails
 from src.agent.prompts import (
     ROUTE_INPUT_PROMPT, CAMPAIGN_PROMPT, EXTRACT_CUSTOMERS_PROMPT,
-    GENERATE_MESSAGES_PROMPT, SEND_MESSAGES_PROMPT, EXTRACT_CAMPAIGN_DETAILS_PROMPT
+    GENERATE_MESSAGES_PROMPT, SEND_MESSAGES_PROMPT, EXTRACT_CAMPAIGN_DETAILS_PROMPT,
+    PROPERTY_SEARCH_PROMPT
 )
 from src.utils.logging import (
     log_node_entry, log_tool_calls, log_tool_messages,
-    log_node_input, log_node_response, log_route_decision
+    log_node_input, log_node_response, log_route_decision,
+    log_tool_calls_with_responses, log_tool_message_details, log_extracted_content_preview
 )
-from src.agent.utils import create_campaign_record, serialize_customer_data, get_last_tool_message
+from src.agent.utils import create_campaign_record, serialize_customer_data, get_last_tool_message, extract_message_content
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.agent.tools import get_db_tools, get_messaging_tools
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_message_content(message) -> str:
-    """Extract content from a message object."""
-    return message.content if hasattr(message, 'content') else str(message)
 
 
 class AgentNode:
@@ -62,6 +59,8 @@ class AgentNode:
         logger.info(f"Routing to {response.route} node")
         return {"route": response.route}
 
+
+
     def route_from_input(self, state: State):
         """Determine next node based on route decision.
 
@@ -72,8 +71,46 @@ class AgentNode:
             Next node name or END.
         """
         route = state.get("route", "")
-        return route if route in ["campaign", "route_2", "route_3"] else END
+        return route if route in ["campaign", "property_search", "route_3"] else END
 
+
+
+
+    def property_node(self, state: State) -> dict:
+        """Search for properties based on user input.
+
+        Args:
+            state: Current graph state.
+
+        Returns:
+            Dictionary with AI response message containing property search results.
+        """
+        log_node_entry("property_node")
+        user_input = state.get("user_input", "")
+        log_node_input(user_input, "property_node")
+
+        messages = [
+            SystemMessage(content=PROPERTY_SEARCH_PROMPT),
+            *state["messages"],
+            HumanMessage(content=user_input)
+        ]
+
+        # Query properties from database using SQL tools based on user's search criteria
+        llm_with_tools = self.llm.bind_tools(self.mcp_tools + self.db_tools)
+        response = llm_with_tools.invoke(messages)
+
+        log_node_response(response, "property_node")
+        log_tool_calls(response, "property_node")
+
+        # Log tool calls with their responses together for better visibility
+        all_messages = list(state.get("messages", [])) + [response]
+        log_tool_calls_with_responses(response, all_messages, "property_node")
+
+        # Extract content properly (handles list format from MCP tools)
+        property_data = extract_message_content(response)
+        log_extracted_content_preview(property_data, "Property data", preview_length=1000)
+
+        return {"messages": [response]}
 
 
     def campaign_node(self, state: State) -> dict:
@@ -104,8 +141,11 @@ class AgentNode:
 
         log_node_response(response, "campaign_node")
         log_tool_calls(response, "campaign_node")
-        if state.get("messages"):
-            log_tool_messages(state["messages"], "campaign_node (existing tool responses)")
+        
+        # Log tool calls with their responses together for better visibility
+        # Include both existing messages and the new response in the state
+        all_messages = list(state.get("messages", [])) + [response]
+        log_tool_calls_with_responses(response, all_messages, "campaign_node")
 
         return {"messages": [response]}
 
@@ -123,13 +163,24 @@ class AgentNode:
         log_node_input("Extracting customer data from prospect information", "extract_customer_details_node")
 
         # Extract prospect data from the last tool message (SQL query result)
-        last_tool_message = get_last_tool_message(state.get("messages", []))
+        messages = state.get("messages", [])
+        last_tool_message = get_last_tool_message(messages)
+        
         if not last_tool_message:
             logger.warning("No tool message found in state messages")
+            # Log all messages for debugging
+            logger.info(f"Total messages in state: {len(messages)}")
+            for i, msg in enumerate(messages):
+                msg_type = type(msg).__name__
+                logger.info(f"  Message {i}: {msg_type}")
             return {}
 
-        prospect_data = _extract_message_content(last_tool_message)
-        logger.info(f"Using prospect data from last tool message (length: {len(prospect_data)} chars)")
+        # Log tool message details for debugging
+        log_tool_message_details(last_tool_message)
+
+        # Extract content properly (handles list format from MCP tools)
+        prospect_data = extract_message_content(last_tool_message)
+        log_extracted_content_preview(prospect_data, "Prospect data", preview_length=1000)
 
         # Parse raw prospect data into structured CustomerData objects
         llm_with_structured_output = self.llm.with_structured_output(CustomersOutput, method="json_schema")
@@ -203,7 +254,7 @@ class AgentNode:
             logger.warning("No messages in state")
             return {}
 
-        campaign_content = _extract_message_content(messages_list[-1])
+        campaign_content = extract_message_content(messages_list[-1])
         logger.info(f"Using prospect data from campaign_node (length: {len(campaign_content)} chars)")
         logger.info(f"Personalizing messages for {len(customer_data)} customer(s)")
 
@@ -230,6 +281,11 @@ class AgentNode:
 
         log_node_response(response, "send_messages_node")
         log_tool_calls(response, "send_messages_node")
+        
+        # Log tool calls with their responses together for better visibility
+        all_messages = list(state.get("messages", [])) + [response]
+        log_tool_calls_with_responses(response, all_messages, "send_messages_node")
+        
         return {"messages": [response]}
 
     
@@ -263,8 +319,10 @@ class AgentNode:
         logger.info(f"Extracted campaign: {campaign_details.name}, "
                    f"city={campaign_details.target_city}, segment={campaign_details.target_segment}")
 
-        # Serialize customer data for frontend display and database storage
-        serialized_data, contacted_prospects = serialize_customer_data(customer_data)
+        # Get generated messages from state to include in serialized data
+        generated_messages = state.get("generated_messages", {})
+        # Serialize customer data for frontend display and database storage (includes message templates)
+        serialized_data, contacted_prospects = serialize_customer_data(customer_data, generated_messages)
 
         # Create campaign record in database with metrics and contacted prospects
         campaign_result = create_campaign_record(

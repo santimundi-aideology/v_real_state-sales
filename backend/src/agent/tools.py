@@ -1,10 +1,11 @@
 """Custom tools for agent interactions with database and messaging services."""
 
 import logging
+import requests
 from typing import Dict, Any, List
 
 from langchain_core.tools import tool
-from src.mcp.supabase import get_supabase_client, get_periskope_tool
+from src.mcp.supabase import get_supabase_client
 from src.agent.utils import format_prospect_row, send_email_via_graph
 
 logger = logging.getLogger(__name__)
@@ -123,29 +124,42 @@ def send_email(message_template: str, subject: str, customers: List[Dict[str, st
         
 
 @tool
-async def send_whatsapp(message_template: str, customers: List[Dict[str, str]], language: str = "english") -> str:
-    """Send batch WhatsApp messages to multiple customers using Periskope MCP.
+def send_whatsapp(message_template: str, customers: List[Dict[str, str]], language: str = "english") -> str:
+    """Send batch WhatsApp messages to multiple customers using Green API.
 
     Args:
         message_template: WhatsApp template with {name} placeholder.
-        customers: List of dicts with "name" key (e.g., [{"name": "John"}, ...]).
+        customers: List of dicts with "name" and "phone" keys (e.g., [{"name": "John", "phone": "+1234567890"}, ...]).
         language: Message language for logging ('english' or 'arabic').
 
     Returns:
         Summary message with success/failure counts.
     """
+    url = "https://7105.api.greenapi.com/waInstance7105448584/sendMessage/89443b946d304a3ca0e65e4258d332fe4747581c49ef4da693"
+    headers = {'Content-Type': 'application/json'}
+    
     successful = failed = 0
     logger.info(f"Sending {len(customers)} WhatsApp message(s) in {language}")
-    send_tool = get_periskope_tool("periskope_send_message")
     
     # Personalize and send WhatsApp message for each customer
     for customer in customers:
         try:
+            
+            # Personalize message by replacing {name} placeholder
+            personalized_message = message_template.replace("{name}", customer["name"])
+            
             payload = {
-                "phone": "19786908266@c.us",
-                "message": message_template.replace("{name}", customer["name"]),
+                "chatId": "19786908266@c.us",
+                "message": personalized_message,
             }
-            await send_tool.ainvoke(payload)
+            
+            response = requests.post(url, json=payload, headers=headers)
+            
+            if response.status_code >= 400:
+                logger.error("GreenAPI %s: %s", response.status_code, response.text)
+            
+            response.raise_for_status()
+            
             logger.info(f"WhatsApp sent to {customer['name']}")
             successful += 1
         except Exception as e:

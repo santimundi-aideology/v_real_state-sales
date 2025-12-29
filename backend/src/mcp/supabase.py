@@ -32,17 +32,14 @@ logging.getLogger("langchain_mcp_adapters").setLevel(logging.WARNING)
 # -----------------------------
 _client: Optional[MultiServerMCPClient] = None
 
-# Async context managers for each server
+# Async context manager for Supabase server
 _supabase_session_cm: Any = None
-_periskope_session_cm: Any = None
 
-# The live, active MCP session objects (created by __aenter__()).
+# The live, active MCP session object (created by __aenter__()).
 _supabase_session: Any = None
-_periskope_session: Any = None
 
-# Tools loaded from the sessions (cached).
+# Tools loaded from the session (cached).
 _supabase_tools: Optional[List[BaseTool]] = None
-_periskope_tools: Optional[List[BaseTool]] = None
 
 # Supabase admin client (singleton).
 _supabase_admin: Optional[Client] = None
@@ -115,19 +112,18 @@ async def init_mcp() -> None:
     """
     Initialize MCP once per process:
     - Create MultiServerMCPClient
-    - Open persistent sessions to supabase and periskope-mcp servers
-    - Load tools from both sessions
+    - Open persistent session to supabase server
+    - Load tools from the session
 
     This is the key change vs calling client.get_tools(), which typically results in
     a fresh session per tool call.
     """
     global _client, _supabase_session_cm, _supabase_session, _supabase_tools
-    global _periskope_session_cm, _periskope_session, _periskope_tools
 
     # Use lock to prevent concurrent initialization (important for FastAPI async contexts)
     async with _init_lock:
         # Already initialized -> nothing to do (idempotent operation)
-        if _supabase_tools is not None and _periskope_tools is not None:
+        if _supabase_tools is not None:
             return
 
         # Load server configurations from mcp.json
@@ -146,51 +142,13 @@ async def init_mcp() -> None:
             logger.info("MCP initialized with persistent session (server=supabase)")
             logger.info(f"Loaded {len(_supabase_tools)} Supabase MCP tools")
 
-        # Initialize Periskope session (WhatsApp messaging operations)
-        if _periskope_tools is None and "periskope-mcp" in mcp_servers:
-            try:
-                # Get async context manager for Periskope server session
-                _periskope_session_cm = _client.session("periskope-mcp")
-                # Enter the context manager to establish persistent connection
-                _periskope_session = await _periskope_session_cm.__aenter__()
-                # Load all available tools from the Periskope MCP server
-                all_periskope_tools = await load_mcp_tools(_periskope_session)
-                
-                # Filter to only include the specified WhatsApp tools (security: don't expose all tools)
-                # This ensures the agent only has access to approved messaging operations
-                allowed_periskope_tools = [
-                    "periskope_send_message",
-                    "periskope_list_chats",
-                    "periskope_get_chat",
-                    "periskope_list_messages_in_a_chat",
-                    "periskope_get_message_by_id",
-                    "periskope_list_contacts",
-                    "periskope_get_contact_by_id"
-                ]
-                
-                # Filter tools to only include whitelisted ones
-                _periskope_tools = [
-                    tool for tool in all_periskope_tools 
-                    if tool.name in allowed_periskope_tools
-                ]
-                
-                logger.info("MCP initialized with persistent session (server=periskope-mcp)")
-                logger.info(f"Loaded {len(_periskope_tools)} Periskope MCP tools (filtered from {len(all_periskope_tools)})")
-                logger.info(f"Periskope tools: {[tool.name for tool in _periskope_tools]}")
-            except Exception as e:
-                # Graceful degradation: if Periskope fails, continue without WhatsApp functionality
-                logger.warning(f"Failed to initialize periskope-mcp server: {e}")
-                logger.warning("Continuing without periskope tools")
-                _periskope_tools = []
-
 
 async def shutdown_mcp() -> None:
     """
-    Close the persistent MCP sessions and clear caches.
+    Close the persistent MCP session and clear caches.
     Call once at application shutdown.
     """
     global _client, _supabase_session_cm, _supabase_session, _supabase_tools
-    global _periskope_session_cm, _periskope_session, _periskope_tools
 
     # Use lock to prevent concurrent shutdown (important for FastAPI async contexts)
     async with _init_lock:
@@ -208,23 +166,8 @@ async def shutdown_mcp() -> None:
                 _supabase_session_cm = None
                 _supabase_session = None
 
-        # Close Periskope session gracefully
-        if _periskope_session_cm is not None:
-            try:
-                # Exit the async context manager to close the connection
-                await _periskope_session_cm.__aexit__(None, None, None)
-            except (RuntimeError, GeneratorExit, Exception, asyncio.CancelledError) as e:
-                # These errors are common during shutdown on Windows with stdio-based MCP servers
-                # They're non-critical and don't affect application functionality
-                logger.debug(f"Periskope MCP session cleanup warning (non-critical): {type(e).__name__}: {e}")
-            finally:
-                # Always clear references even if cleanup fails
-                _periskope_session_cm = None
-                _periskope_session = None
-
         # Drop cached tools/client references to allow garbage collection
         _supabase_tools = None
-        _periskope_tools = None
         _client = None
 
         logger.info("MCP shutdown complete")
@@ -232,16 +175,13 @@ async def shutdown_mcp() -> None:
 
 async def get_mcp_tools() -> List[BaseTool]:
     """
-    Get cached tools from both Supabase and Periskope servers; lazily initializes MCP if needed.
+    Get cached tools from Supabase server; lazily initializes MCP if needed.
     
     Returns:
         - Supabase tools: 'execute_sql' and 'list_tables' (filtered and sorted)
-        - Periskope tools: 'periskope_send_message', 'periskope_list_chats', 'periskope_get_chat',
-          'periskope_list_messages_in_a_chat', 'periskope_get_message_by_id', 'periskope_list_contacts',
-          'periskope_get_contact_by_id' (filtered)
     """
     # Lazy initialization: only initialize MCP if tools aren't already cached
-    if _supabase_tools is None or _periskope_tools is None:
+    if _supabase_tools is None:
         await init_mcp()
     
     # Filter Supabase tools to only include 'execute_sql' and 'list_tables'
@@ -253,18 +193,10 @@ async def get_mcp_tools() -> List[BaseTool]:
         key=lambda t: t.name
     )
     
-    # Periskope tools are already filtered during initialization (only WhatsApp messaging tools)
-    periskope_tools = _periskope_tools or []
-    
-    # Combine tools: Supabase first (database operations), then Periskope (messaging operations)
-    # This ordering is important for tool selection in LangChain/LangGraph
-    all_tools = filtered_supabase_tools + periskope_tools
-    
-    logger.info(f"Returning {len(all_tools)} MCP tools:")
+    logger.info(f"Returning {len(filtered_supabase_tools)} MCP tools:")
     logger.info(f"  - Supabase: {[tool.name for tool in filtered_supabase_tools]}")
-    logger.info(f"  - Periskope: {[tool.name for tool in periskope_tools]}")
     
-    return all_tools
+    return filtered_supabase_tools
 
 
 def get_mcp_tools_sync() -> List[BaseTool]:
@@ -277,20 +209,17 @@ def get_mcp_tools_sync() -> List[BaseTool]:
     Raises RuntimeError if called from within an async context (use await get_mcp_tools() instead).
     """
     # Fast path: if tools are already cached, return them immediately (no async overhead)
-    if _supabase_tools is not None and _periskope_tools is not None:
-        # Filter and combine tools (same logic as async version)
+    if _supabase_tools is not None:
+        # Filter tools (same logic as async version)
         filtered_supabase_tools = sorted(
             [tool for tool in _supabase_tools if tool.name in ['execute_sql', 'list_tables']],
             key=lambda t: t.name
         )
-        periskope_tools = _periskope_tools or []
-        all_tools = filtered_supabase_tools + periskope_tools
         
-        logger.info(f"Returning {len(all_tools)} cached MCP tools (sync):")
+        logger.info(f"Returning {len(filtered_supabase_tools)} cached MCP tools (sync):")
         logger.info(f"  - Supabase: {[tool.name for tool in filtered_supabase_tools]}")
-        logger.info(f"  - Periskope: {[tool.name for tool in periskope_tools]}")
         
-        return all_tools
+        return filtered_supabase_tools
     
     # Tools aren't cached, we need to initialize MCP
     # CRITICAL: Check if we're in an async context first (asyncio.run() can't be called from async context)
@@ -318,46 +247,13 @@ def get_mcp_tools_sync() -> List[BaseTool]:
         [tool for tool in (_supabase_tools or []) if tool.name in ['execute_sql', 'list_tables']],
         key=lambda t: t.name
     )
-    periskope_tools = _periskope_tools or []
-    all_tools = filtered_supabase_tools + periskope_tools
     
-    logger.info(f"Returning {len(all_tools)} MCP tools (sync):")
+    logger.info(f"Returning {len(filtered_supabase_tools)} MCP tools (sync):")
     logger.info(f"  - Supabase: {[tool.name for tool in filtered_supabase_tools]}")
-    logger.info(f"  - Periskope: {[tool.name for tool in periskope_tools]}")
     
-    return all_tools
+    return filtered_supabase_tools
 
 
-def get_periskope_tool(tool_name: str) -> Optional[BaseTool]:
-    """
-    Get a specific Periskope MCP tool by name.
-    
-    This is used by the send_whatsapp tool to directly access the Periskope send_message tool
-    without going through the full tool list.
-    
-    Args:
-        tool_name: Name of the tool to retrieve (e.g., 'periskope_send_message')
-    
-    Returns:
-        The tool if found, None otherwise
-    """
-    global _periskope_tools
-    
-    # Check if tools are initialized (should be initialized before this is called)
-    if _periskope_tools is None:
-        # Tools not initialized yet - this shouldn't happen in normal flow
-        # but we'll handle it gracefully to prevent crashes
-        logger.warning("Periskope tools not initialized. Call get_mcp_tools() first.")
-        return None
-    
-    # Search through cached Periskope tools to find the requested tool
-    for tool in _periskope_tools:
-        if tool.name == tool_name:
-            return tool
-    
-    # Tool not found - log warning but don't crash (allows graceful degradation)
-    logger.warning(f"Periskope tool '{tool_name}' not found in available tools")
-    return None
 
 
 def get_supabase_client() -> Client:

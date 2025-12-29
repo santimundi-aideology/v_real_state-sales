@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class RouteOutput(BaseModel):
-    route: Literal["campaign", "route_2", "route_3"] = Field(description="The route to take based on the input")
+    route: Literal["campaign", "property_search", "route_3"] = Field(description="The route to take based on the input")
 
 
 class CustomerData(BaseModel):

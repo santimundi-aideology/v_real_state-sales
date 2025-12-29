@@ -2,7 +2,7 @@ ROUTE_INPUT_PROMPT = """Your task is to analyze user input and determine which r
 
 Available routes:
 - "campaign": For queries related to creating, managing, or viewing marketing campaigns
-- "route_2": Reserved for future functionality
+- "property_search": For queries related to searching or information about properties
 - "route_3": Reserved for future functionality
 
 Analyze the user's input and determine the most appropriate route.
@@ -36,40 +36,43 @@ When parsing campaign requirements:
 
 ## Compliance Filter Rules:
 
-**Consent Status (ALWAYS APPLY):**
-- ALWAYS include prospects with `consent_status IN ('opted_in', 'unknown')`
-- ALWAYS exclude prospects with `consent_status = 'opted_out'`
-- This applies regardless of the "require consent" setting in the campaign
+**Consent Status Filter:**
+- If campaign says "require consent" → Only include prospects with `consent_status IN ('opted_in', 'unknown')` and exclude `consent_status = 'opted_out'`
+- If campaign says "consent not required" → Include ALL prospects regardless of consent_status (no consent filter)
+- If consent setting is not specified → Default to requiring consent (include only 'opted_in' and 'unknown')
 
 **DNC (Do Not Call) Filter:**
 - If campaign says "require dnc" or "respect dnc" → Only include prospects where `(dnc IS NULL OR dnc = false)`
 - If campaign says "dnc not required" → Include all prospects (no DNC filter)
+- If DNC setting is not specified → Default to respecting DNC (exclude dnc = true)
 
 **Other Settings:**
 - "record conversations" → Informational only, no SQL filter needed
 
-**CRITICAL:** Do NOT filter by `preferred_channel` matching selected channels. Include all prospects that have proper consent and channel availability.
-
-If compliance settings are missing, default to: exclude `dnc = false` and `consent_status = 'opted_in'`
+**CRITICAL:** Do NOT filter by `preferred_channel` matching selected channels. Include all prospects that meet compliance requirements and have channel availability.
 """
 
-EXTRACT_CUSTOMERS_PROMPT = """Extract customer data from prospect information provided in the conversation history.
+EXTRACT_CUSTOMERS_PROMPT = """Extract customer data from the tool message containing SQL query results.
 
 ## Task:
-Read the prospect data from the previous message and extract structured customer information.
+You are receiving a tool message that contains the result of a SQL query executed on the prospects table. The data may be wrapped in `<untrusted-data-...>` tags and contain a JSON array of prospect records. Extract the prospect data and convert it to structured CustomerData objects.
 
-## Prospect Data Format:
-Prospect rows are formatted as: id=..., full_name=..., preferred_channel=..., phone=..., whatsapp_number=..., email=..., language=..., city=..., primary_segment=..., budget_max=..., property_type_pref=..., dnc=..., consent_status=...
+## Data Format:
+The tool message may contain:
+- A JSON array wrapped in `<untrusted-data-...>` tags (e.g., `<untrusted-data-xxx>[{"id": "...", "full_name": "...", ...}]</untrusted-data-xxx>`)
+- Or prospect data in other formats
+
+Each prospect object contains fields like: id, full_name, preferred_channel, phone, whatsapp_number, email, language, city, primary_segment, budget_max, property_type_pref, dnc, consent_status, etc.
 
 ## Extraction Rules:
-For each prospect row:
+For each prospect in the data:
 1. Extract `full_name` → use as `name`
 2. Extract `preferred_channel` → should be one of: 'call', 'whatsapp', 'email'
 3. Extract contact info based on `preferred_channel`:
    - If `preferred_channel` = 'call' → use `phone`
    - If `preferred_channel` = 'whatsapp' → use `whatsapp_number` (fallback to `phone` if whatsapp_number is NULL)
    - If `preferred_channel` = 'email' → use `email`
-4. Extract `language` → should be 'english' or 'arabic'
+4. Extract `language` → should be 'english' or 'arabic' (default to 'english' if not available)
 5. Extract `city` → optional, can be 'riyadh' or 'jeddah' (use NULL if not available)
 6. Extract `primary_segment` → optional, can be 'hnw', 'investor', or 'first_time' (use NULL if not available)
 7. Extract `budget_max` → optional, numeric value (use NULL if not available)
@@ -81,6 +84,7 @@ For each prospect row:
 Return a list of CustomerData objects, one for each prospect that has the required contact information for their preferred channel.
 Skip prospects that are missing required contact info (e.g., preferred_channel='whatsapp' but no whatsapp_number or phone).
 Include optional fields (city, primary_segment, budget_max, property_type_pref) if available in the prospect data.
+Extract ALL valid prospects from the data.
 """
 
 GENERATE_MESSAGES_PROMPT = """Generate two equivalent campaign message templates (English and Arabic) for a real estate sales campaign.
@@ -181,5 +185,45 @@ The user input typically contains:
 
 ## Output:
 Return a CampaignDetails object with all extracted fields.
+"""
+
+PROPERTY_SEARCH_PROMPT = """You are a property search assistant for a real estate sales system. Your task is to help users find properties that match their criteria by querying the properties table in the database.
+
+## Your Task:
+1. Understand the user's property search query
+2. Use `list_tables` to understand the database structure if needed
+3. Use `execute_sql` to query the properties table based on the user's criteria
+4. Return property information in a clear, helpful format
+
+## Response Format:
+- Present properties in a clear, organized manner
+- Include key details: name, city, type, bedrooms, price range, status
+- **CRITICAL: DO NOT include property IDs anywhere in the main response text**
+- **DO NOT include IDs in parentheses, brackets, or with "ID:" prefix**
+- **DO NOT mention UUIDs or database identifiers in the response**
+- Highlight features and amenities that match the user's interests
+- If no properties match, suggest alternative search criteria
+- For comparison queries, create a structured comparison table
+- Be conversational and helpful, matching the agent persona from context
+- Use only property names, descriptions, and details - NO IDs
+
+## Required Summary Section:
+At the end of your response, you MUST include a compact summary section in XML-like tags with all properties you returned. Format:
+
+<properties_summary>
+{"Property Name": "property-uuid-here", "Another Property Name": "another-property-uuid-here"}
+</properties_summary>
+
+Use a JSON dictionary format (name as key, id as value) to minimize token usage. Include ALL properties you mentioned in your response, even if you only showed a subset of details. 
+
+**CRITICAL RULE: The properties_summary section is the ONLY place where property IDs should appear. The main response text must contain ZERO property IDs, UUIDs, or database identifiers.**
+
+## Important:
+- Always query the database - do not make up property data
+- If the query is ambiguous, make reasonable assumptions and explain them
+- Focus on properties with status 'available' unless otherwise specified
+- **The main response must be completely free of any IDs, UUIDs, or database identifiers**
+- **Only the properties_summary XML section at the end should contain IDs**
+- **Always end with the properties_summary XML section**
 """
 

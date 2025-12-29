@@ -5,6 +5,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from src.agent.state import State
 from src.agent.nodes import AgentNode
 from src.agent.tools import get_db_tools, get_messaging_tools
+from langgraph.checkpoint.memory import MemorySaver
 
 
 class Agent_GraphBuilder:
@@ -30,7 +31,7 @@ class Agent_GraphBuilder:
             Compiled LangGraph ready for execution.
         """
         agent_node = AgentNode(self.llm, self.mcp_tools)
-        
+
         # Combine all tools (MCP, DB, messaging) for tool execution nodes
         all_tools = self.mcp_tools + get_db_tools() + get_messaging_tools()
         tool_node = ToolNode(all_tools, handle_tool_errors=True)
@@ -38,19 +39,21 @@ class Agent_GraphBuilder:
         # Add workflow nodes
         self.graph.add_node("route_input", agent_node.route_input)
         self.graph.add_node("campaign", agent_node.campaign_node)
+        self.graph.add_node("property_search", agent_node.property_node)
         self.graph.add_node("extract_customers", agent_node.extract_customer_details_node)
         self.graph.add_node("generate_messages", agent_node.generate_messages_node)
         self.graph.add_node("send_messages", agent_node.send_messages_node)
         self.graph.add_node("serialize_customer_data", agent_node.serialize_customer_data_node)
         self.graph.add_node("tools_campaign", tool_node)  # Execute tools for campaign node
+        self.graph.add_node("tools_property_search", tool_node)  # Execute tools for property_search node
         self.graph.add_node("tools_send_messages", tool_node)  # Execute tools for send_messages node
 
-        # Define workflow edges: START -> route_input -> campaign -> extract -> generate -> send -> serialize -> END
+        # Define workflow edges: START -> route_input -> (campaign | property_search | route_3) -> ...
         self.graph.add_edge(START, "route_input")
         self.graph.add_conditional_edges(
             "route_input",
             agent_node.route_from_input,
-            {"campaign": "campaign", "route_2": END, "route_3": END}
+            {"campaign": "campaign", "property_search": "property_search", "route_3": END}
         )
         # Campaign node can loop back to tools if LLM calls tools, otherwise proceed to extract
         self.graph.add_conditional_edges(
@@ -59,6 +62,15 @@ class Agent_GraphBuilder:
             {"tools": "tools_campaign", END: "extract_customers"}
         )
         self.graph.add_edge("tools_campaign", "campaign")  # Loop back after tool execution
+        
+        # Property search node can loop back to tools if LLM calls tools, otherwise proceed to END
+        self.graph.add_conditional_edges(
+            "property_search",
+            tools_condition,
+            {"tools": "tools_property_search", END: END}
+        )
+        self.graph.add_edge("tools_property_search", "property_search")  # Loop back after tool execution
+        
         self.graph.add_edge("extract_customers", "generate_messages")
         self.graph.add_edge("generate_messages", "send_messages")
         # Send messages node can loop back to tools if LLM calls tools, otherwise proceed to serialize
@@ -70,4 +82,4 @@ class Agent_GraphBuilder:
         self.graph.add_edge("tools_send_messages", "send_messages")  # Loop back after tool execution
         self.graph.add_edge("serialize_customer_data", END)
 
-        return self.graph.compile()
+        return self.graph.compile(checkpointer=MemorySaver())

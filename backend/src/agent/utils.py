@@ -26,6 +26,49 @@ def get_last_tool_message(messages: List[BaseMessage]) -> Optional[ToolMessage]:
     return next((msg for msg in reversed(messages) if isinstance(msg, ToolMessage)), None)
 
 
+def extract_message_content(message) -> str:
+    """Extract content from a message object, handling different formats.
+    
+    ToolMessage content can be:
+    - A string
+    - A list of dicts with 'text' fields (MCP tool format)
+    - Other formats
+    
+    Args:
+        message: Message object (ToolMessage, AIMessage, etc.) to extract content from.
+    
+    Returns:
+        The full text content as a string.
+    """
+    if not hasattr(message, 'content'):
+        return str(message)
+    
+    content = message.content
+    
+    # Handle list format (common in MCP tools)
+    if isinstance(content, list):
+        # Extract text from list of dicts (e.g., [{'type': 'text', 'text': '...'}])
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict):
+                # Try to get 'text' field
+                if 'text' in item:
+                    text_parts.append(str(item['text']))
+                # Or convert entire dict to string
+                else:
+                    text_parts.append(str(item))
+            else:
+                text_parts.append(str(item))
+        return '\n'.join(text_parts)
+    
+    # Handle string content
+    if isinstance(content, str):
+        return content
+    
+    # Fallback: convert to string
+    return str(content)
+
+
 def format_value(value) -> str:
     """Format a value for display in formatted strings.
 
@@ -167,18 +210,22 @@ def create_campaign_record(
 
 
 
-def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def serialize_customer_data(
+    customer_data: List[CustomerData],
+    generated_messages: Optional[Dict[str, str]] = None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Serialize CustomerData list to JSON-serializable format.
 
     Args:
         customer_data: List of CustomerData objects to serialize.
+        generated_messages: Optional dict with 'english' and 'arabic' message templates (with {name} placeholders).
 
     Returns:
         Tuple of (serialized_data, contacted_prospects):
         - serialized_data: List of dicts for frontend display.
-        - contacted_prospects: List of dicts for campaign record.
+        - contacted_prospects: List of dicts for campaign record (includes personalized messages with actual customer names).
     """
-    def _to_dict(customer: CustomerData, use_channel: bool = False) -> Dict[str, Any]:
+    def _to_dict(customer: CustomerData, use_channel: bool = False, include_messages: bool = False) -> Dict[str, Any]:
         """Convert CustomerData to dictionary."""
         d = {
             "name": customer.name,
@@ -195,11 +242,26 @@ def serialize_customer_data(customer_data: List[CustomerData]) -> Tuple[List[Dic
             d["channel"] = customer.preferred_channel
         else:
             d["preferred_channel"] = customer.preferred_channel
+        
+        # Add personalized message to contacted_prospects (for database storage)
+        # Only store the message in the customer's preferred language
+        if include_messages and generated_messages:
+            # Get the appropriate message template based on customer's preferred language
+            if customer.language == "arabic":
+                message_template = generated_messages.get("arabic", "")
+            else:
+                # Default to English for "english" or any other value
+                message_template = generated_messages.get("english", "")
+            
+            # Replace {name} placeholder with actual customer name
+            d["message"] = message_template.replace("{name}", customer.name)
+            d["message_language"] = customer.language
+        
         return d
 
-    # Create two versions: one for frontend (with preferred_channel) and one for DB (with channel)
+    # Create two versions: one for frontend (with preferred_channel) and one for DB (with channel and messages)
     serialized_data = [_to_dict(c) for c in customer_data]
-    contacted_prospects = [_to_dict(c, use_channel=True) for c in customer_data]
+    contacted_prospects = [_to_dict(c, use_channel=True, include_messages=True) for c in customer_data]
 
     logger.info(f"Serialized {len(serialized_data)} customer(s) to JSON format")
     return serialized_data, contacted_prospects

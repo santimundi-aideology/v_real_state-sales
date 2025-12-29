@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Mail,
   MessageSquare,
+  EyeOff,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,6 +53,8 @@ interface CustomerData {
   primary_segment?: string | null
   budget_max?: number | null
   property_type_pref?: string | null
+  message?: string
+  message_language?: string
 }
 
 export function CampaignsContent() {
@@ -65,6 +68,13 @@ export function CampaignsContent() {
   const [error, setError] = useState<string | null>(null)
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [showViewRunDialog, setShowViewRunDialog] = useState(false)
+  const [revealContacts, setRevealContacts] = useState<Record<number, boolean>>({})
+  
+  // Get current user role to check if admin
+  const currentRole = typeof window !== "undefined" 
+    ? localStorage.getItem("fph-current-role") || "system"
+    : "system"
+  const isAdmin = currentRole === "admin"
   
   // Form state
   const [campaignName, setCampaignName] = useState("")
@@ -302,7 +312,82 @@ export function CampaignsContent() {
     const prospects = campaignWithProspects.contactedProspects || []
     
     setCustomerData(prospects)
+    setRevealContacts({}) // Reset reveal state when opening new dialog
     setShowViewRunDialog(true)
+  }
+  
+  // Function to mask contact information
+  const maskContact = (contact: string, index: number): string => {
+    if (!isAdmin) {
+      // Always mask for non-admins
+      return maskValue(contact)
+    }
+    // For admins, check if this specific contact is revealed
+    if (revealContacts[index]) {
+      return contact
+    }
+    return maskValue(contact)
+  }
+  
+  // Helper function to mask phone numbers and emails
+  const maskValue = (value: string): string => {
+    if (!value) return value
+    
+    // Check if it's an email
+    if (value.includes("@")) {
+      const [localPart, domain] = value.split("@")
+      if (localPart.length <= 2) {
+        return `**@${domain}`
+      }
+      const visibleStart = localPart.substring(0, 2)
+      const maskedMiddle = "*".repeat(Math.min(localPart.length - 2, 4))
+      return `${visibleStart}${maskedMiddle}@${domain}`
+    }
+    
+    // Check if it's a phone number (contains digits)
+    if (/\d/.test(value)) {
+      // Extract all digits
+      const digits = value.match(/\d/g) || []
+      if (digits.length <= 4) {
+        // If too short, mask everything
+        return value.replace(/\d/g, "*")
+      }
+      
+      // Keep first 2 and last 2 digits, mask the rest
+      const firstTwo = digits.slice(0, 2).join("")
+      const lastTwo = digits.slice(-2).join("")
+      const middleCount = digits.length - 4
+      
+      // Replace digits while preserving formatting
+      let digitIndex = 0
+      return value.replace(/\d/g, () => {
+        const currentIndex = digitIndex++
+        if (currentIndex < 2) {
+          return firstTwo[currentIndex]
+        }
+        if (currentIndex >= digits.length - 2) {
+          return lastTwo[currentIndex - (digits.length - 2)]
+        }
+        return "*"
+      })
+    }
+    
+    // Default: mask middle characters
+    if (value.length <= 4) {
+      return "*".repeat(value.length)
+    }
+    const start = value.substring(0, 2)
+    const end = value.substring(value.length - 2)
+    const middle = "*".repeat(Math.min(value.length - 4, 6))
+    return `${start}${middle}${end}`
+  }
+  
+  // Toggle reveal for a specific contact
+  const toggleRevealContact = (index: number) => {
+    setRevealContacts(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }))
   }
 
   const handleCreateCampaign = async () => {
@@ -363,6 +448,9 @@ export function CampaignsContent() {
 
     const message = `Find and query prospects matching these campaign criteria: ${parts.join("; ")}`
     
+    // Generate UUID for thread_id using browser's crypto API
+    const threadId = crypto.randomUUID()
+    
     setIsCreating(true)
     
     try {
@@ -375,6 +463,7 @@ export function CampaignsContent() {
           query: message,
           agent_persona: agentScript || "", // Empty string, backend will use default
           user_role: currentRole,
+          thread_id: threadId,
         }),
       })
 
@@ -929,7 +1018,24 @@ export function CampaignsContent() {
                                       ) : (
                                         <Phone className="h-3.5 w-3.5 flex-shrink-0" />
                                       )}
-                                      <span className="font-mono truncate">{customer.contact}</span>
+                                      <span className="font-mono truncate">
+                                        {maskContact(customer.contact, index)}
+                                      </span>
+                                      {isAdmin && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-2 ml-1 text-xs"
+                                          onClick={() => toggleRevealContact(index)}
+                                          title={revealContacts[index] ? "Hide contact" : "Reveal contact"}
+                                        >
+                                          {revealContacts[index] ? (
+                                            <EyeOff className="h-3.5 w-3.5" />
+                                          ) : (
+                                            <Eye className="h-3.5 w-3.5" />
+                                          )}
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1007,6 +1113,33 @@ export function CampaignsContent() {
                                     </div>
                                   )}
                                 </div>
+                                
+                                {/* Message Box */}
+                                {customerData.message && (
+                                  <div className="pt-3 border-t border-border/50">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <MessageSquare className={cn("h-4 w-4", styles.text)} />
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                        Message Sent ({customerData.message_language || customer.language})
+                                      </span>
+                                    </div>
+                                    <div className={cn(
+                                      "p-4 rounded-lg border-2 space-y-2",
+                                      styles.border,
+                                      styles.bg,
+                                      "backdrop-blur-sm"
+                                    )}>
+                                      <div className={cn(
+                                        "text-sm leading-relaxed whitespace-pre-wrap",
+                                        customerData.message_language === "arabic" || customer.language === "arabic"
+                                          ? "text-right font-medium"
+                                          : "text-left"
+                                      )}>
+                                        {customerData.message}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </CardContent>
